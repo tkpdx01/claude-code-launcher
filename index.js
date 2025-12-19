@@ -49,7 +49,7 @@ program
 
     if (profile) {
       // 检查是否是子命令
-      if (['list', 'ls', 'use', 'show', 'import', 'import-file', 'if', 'new', 'sync', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
+      if (['list', 'ls', 'use', 'show', 'import', 'if', 'new', 'sync', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
         return; // 让子命令处理
       }
 

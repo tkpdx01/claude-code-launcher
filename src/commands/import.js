@@ -17,10 +17,10 @@ import { extractFromText, getDomainName, sanitizeProfileName, convertToClaudeSet
 
 // 交互式导入命令
 export function importCommand(program) {
-  // ccc import-file <file> - 从文件导入（自动识别格式）
+  // ccc import <file> - 从文件导入（自动识别格式）
   program
-    .command('import-file <file>')
-    .aliases(['if', 'import'])
+    .command('import <file>')
+    .aliases(['if'])
     .description('从文件导入配置（自动识别 CC-Switch SQL 或 All API Hub JSON）')
     .action(async (file) => {
       // 检查文件是否存在
@@ -79,7 +79,8 @@ export function importCommand(program) {
 
       providers.forEach((p, i) => {
         const url = p.settingsConfig?.env?.ANTHROPIC_BASE_URL || p.websiteUrl || '(未设置)';
-        const profileName = sanitizeProfileName(p.name);
+        // 使用 API URL 生成 profile 名称
+        const profileName = sanitizeProfileName(getDomainName(url) || p.name);
         let note = '';
 
         if (format === 'ccswitch') {
@@ -124,8 +125,9 @@ export function importCommand(program) {
           name: 'selection',
           message: '选择要导入的配置 (空格选择，回车确认):',
           choices: providers.map((p, i) => {
-            const profileName = sanitizeProfileName(p.name);
             const url = p.settingsConfig?.env?.ANTHROPIC_BASE_URL || p.websiteUrl || '';
+            // 使用 API URL 生成 profile 名称
+            const profileName = sanitizeProfileName(getDomainName(url) || p.name);
             return {
               name: `${profileName} (${url})`,
               value: i,
@@ -148,7 +150,9 @@ export function importCommand(program) {
       let skipped = 0;
 
       for (const provider of selectedProviders) {
-        const profileName = sanitizeProfileName(provider.name);
+        const url = provider.settingsConfig?.env?.ANTHROPIC_BASE_URL || provider.websiteUrl || '';
+        // 使用 API URL 生成 profile 名称
+        const profileName = sanitizeProfileName(getDomainName(url) || provider.name);
         const profilePath = getProfilePath(profileName);
 
         // 检查是否已存在

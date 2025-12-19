@@ -11,16 +11,15 @@ export function extractFromText(text) {
   return { urls, tokens };
 }
 
-// 从 URL 获取域名作为名称
+// 从 URL 获取域名作为名称（去掉协议和www子域名）
 export function getDomainName(url) {
   try {
     const urlObj = new URL(url);
-    // 获取完整域名（包括子域名）
+    // 获取完整域名
     let hostname = urlObj.hostname;
     // 移除 www. 前缀
     hostname = hostname.replace(/^www\./, '');
-    // 将点替换为下划线，使其成为有效的文件名
-    return hostname.replace(/\./g, '_');
+    return hostname;
   } catch {
     return null;
   }
