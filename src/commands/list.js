@@ -34,7 +34,8 @@ export function listCommand(program) {
         let apiUrl = chalk.gray('(未设置)');
 
         if (settings) {
-          apiUrl = settings.apiUrl || chalk.gray('(未设置)');
+          // 兼容两种格式：apiUrl 或 env.ANTHROPIC_BASE_URL
+          apiUrl = settings.apiUrl || settings.env?.ANTHROPIC_BASE_URL || chalk.gray('(未设置)');
         } else {
           apiUrl = chalk.red('(读取失败)');
         }
