@@ -66,8 +66,8 @@ export function editCommand(program) {
         {
           type: 'input',
           name: 'newName',
-          message: '重命名 (留空保持不变):',
-          default: ''
+          message: 'Profile 名称:',
+          default: profile
         }
       ]);
 

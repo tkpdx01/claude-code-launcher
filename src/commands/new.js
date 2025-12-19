@@ -70,7 +70,7 @@ export function newCommand(program) {
         console.log();
       }
 
-      const { apiUrl, apiKey } = await inquirer.prompt([
+      const { apiUrl, apiKey, finalName } = await inquirer.prompt([
         {
           type: 'input',
           name: 'apiUrl',
@@ -82,8 +82,30 @@ export function newCommand(program) {
           name: 'apiKey',
           message: 'API Key:',
           default: baseSettings.apiKey || ''
+        },
+        {
+          type: 'input',
+          name: 'finalName',
+          message: 'Profile 名称:',
+          default: name
         }
       ]);
+
+      // 如果名称改变了，检查新名称是否存在
+      if (finalName !== name && profileExists(finalName)) {
+        const { overwriteNew } = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'overwriteNew',
+            message: `配置 "${finalName}" 已存在，是否覆盖?`,
+            default: false
+          }
+        ]);
+        if (!overwriteNew) {
+          console.log(chalk.yellow('已取消'));
+          process.exit(0);
+        }
+      }
 
       // 合并设置：保留模板中的其他设置，覆盖 API 相关设置
       const newSettings = {
@@ -93,13 +115,13 @@ export function newCommand(program) {
       };
 
       ensureDirs();
-      saveProfile(name, newSettings);
-      console.log(chalk.green(`\n✓ 配置 "${name}" 已创建`));
+      saveProfile(finalName, newSettings);
+      console.log(chalk.green(`\n✓ 配置 "${finalName}" 已创建`));
 
       // 如果是第一个 profile，设为默认
       const profiles = getProfiles();
       if (profiles.length === 1) {
-        setDefaultProfile(name);
+        setDefaultProfile(finalName);
         console.log(chalk.green(`✓ 已设为默认配置`));
       }
 
@@ -114,7 +136,7 @@ export function newCommand(program) {
       ]);
 
       if (useNow) {
-        launchClaude(name);
+        launchClaude(finalName);
       }
     });
 }
