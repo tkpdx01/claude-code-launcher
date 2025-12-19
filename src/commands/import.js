@@ -15,6 +15,23 @@ import {
 import { parseCCSwitchSQL, parseAllApiHubJSON, detectFileFormat } from '../parsers.js';
 import { extractFromText, getDomainName, sanitizeProfileName, convertToClaudeSettings } from '../utils.js';
 
+// 生成唯一的 profile 名称（如果重复则加后缀 token2, token3...）
+function getUniqueProfileName(baseName, usedNames) {
+  if (!usedNames.has(baseName)) {
+    usedNames.add(baseName);
+    return baseName;
+  }
+
+  let suffix = 2;
+  let newName = `${baseName}-token${suffix}`;
+  while (usedNames.has(newName)) {
+    suffix++;
+    newName = `${baseName}-token${suffix}`;
+  }
+  usedNames.add(newName);
+  return newName;
+}
+
 // 交互式导入命令
 export function importCommand(program) {
   // ccc import <file> - 从文件导入（自动识别格式）
@@ -77,10 +94,14 @@ export function importCommand(program) {
         style: { head: [], border: [] }
       });
 
+      // 用于跟踪已使用的名称（预览阶段）
+      const previewUsedNames = new Set();
+
       providers.forEach((p, i) => {
         const url = p.settingsConfig?.env?.ANTHROPIC_BASE_URL || p.websiteUrl || '(未设置)';
-        // 使用 API URL 生成 profile 名称
-        const profileName = sanitizeProfileName(getDomainName(url) || p.name);
+        // 使用 API URL 生成 profile 名称，重复时加后缀
+        const baseName = sanitizeProfileName(getDomainName(url) || p.name);
+        const profileName = getUniqueProfileName(baseName, previewUsedNames);
         let note = '';
 
         if (format === 'ccswitch') {
@@ -119,6 +140,8 @@ export function importCommand(program) {
       }
 
       // 选择要导入的配置
+      // 重新计算名称用于选择列表
+      const selectionUsedNames = new Set();
       const { selection } = await inquirer.prompt([
         {
           type: 'checkbox',
@@ -126,8 +149,9 @@ export function importCommand(program) {
           message: '选择要导入的配置 (空格选择，回车确认):',
           choices: providers.map((p, i) => {
             const url = p.settingsConfig?.env?.ANTHROPIC_BASE_URL || p.websiteUrl || '';
-            // 使用 API URL 生成 profile 名称
-            const profileName = sanitizeProfileName(getDomainName(url) || p.name);
+            // 使用 API URL 生成 profile 名称，重复时加后缀
+            const baseName = sanitizeProfileName(getDomainName(url) || p.name);
+            const profileName = getUniqueProfileName(baseName, selectionUsedNames);
             return {
               name: `${profileName} (${url})`,
               value: i,
@@ -149,10 +173,14 @@ export function importCommand(program) {
       let imported = 0;
       let skipped = 0;
 
+      // 用于跟踪导入时已使用的名称（包括已存在的 profiles）
+      const importUsedNames = new Set(getProfiles());
+
       for (const provider of selectedProviders) {
         const url = provider.settingsConfig?.env?.ANTHROPIC_BASE_URL || provider.websiteUrl || '';
-        // 使用 API URL 生成 profile 名称
-        const profileName = sanitizeProfileName(getDomainName(url) || provider.name);
+        // 使用 API URL 生成 profile 名称，重复时加后缀
+        const baseName = sanitizeProfileName(getDomainName(url) || provider.name);
+        const profileName = getUniqueProfileName(baseName, importUsedNames);
         const profilePath = getProfilePath(profileName);
 
         // 检查是否已存在
