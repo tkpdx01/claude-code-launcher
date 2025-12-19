@@ -23,6 +23,8 @@ ccc <profile> -d       # Combine profile and ddd flag
 
 ```bash
 ccc list               # List all profiles
+ccc list -v            # List with API URLs
+ccc show [profile]     # Show full profile config
 ccc use <profile>      # Set default profile
 ccc new [name]         # Create new profile from template
 ccc import             # Import from pasted text (auto-detect URL/Token)

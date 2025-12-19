@@ -83,6 +83,8 @@ function showHelp() {
 
   console.log(chalk.yellow('  管理命令:'));
   console.log(chalk.gray('    ccc list, ls           ') + '列出所有配置');
+  console.log(chalk.gray('    ccc list -v            ') + '列出配置（含 API URL）');
+  console.log(chalk.gray('    ccc show [profile]     ') + '显示完整配置');
   console.log(chalk.gray('    ccc use <profile>      ') + '设置默认配置');
   console.log(chalk.gray('    ccc new [name]         ') + '基于模板创建新配置');
   console.log(chalk.gray('    ccc import             ') + '从粘贴文本导入（自动识别 URL/Token）');
@@ -331,14 +333,15 @@ async function importProfile() {
 program
   .name('ccc')
   .description('Claude Code Settings Launcher - 管理多个 Claude Code 配置文件')
-  .version('1.0.0');
+  .version('1.1.0');
 
 // ccc list
 program
   .command('list')
   .alias('ls')
   .description('列出所有 profiles')
-  .action(() => {
+  .option('-v, --verbose', '显示详细信息')
+  .action((options) => {
     const profiles = getProfiles();
     const defaultProfile = getDefaultProfile();
 
@@ -348,12 +351,34 @@ program
       return;
     }
 
-    console.log(chalk.cyan('可用的 Profiles:\n'));
+    console.log(chalk.cyan(`\n可用的 Profiles (${profiles.length} 个):\n`));
+
     profiles.forEach(p => {
       const isDefault = p === defaultProfile;
-      const marker = isDefault ? chalk.green(' (默认)') : '';
-      console.log(`  ${chalk.white(p)}${marker}`);
+      const marker = isDefault ? chalk.green(' *') : '  ';
+
+      if (options.verbose) {
+        // 详细模式：显示 API URL
+        const profilePath = getProfilePath(p);
+        try {
+          const settings = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
+          const apiUrl = settings.apiUrl || chalk.gray('(未设置)');
+          console.log(`${marker}${chalk.white(p)}`);
+          console.log(chalk.gray(`    ${apiUrl}`));
+        } catch {
+          console.log(`${marker}${chalk.white(p)} ${chalk.red('(读取失败)')}`);
+        }
+      } else {
+        // 简洁模式
+        const defaultLabel = isDefault ? chalk.green(' (默认)') : '';
+        console.log(`  ${chalk.white(p)}${defaultLabel}`);
+      }
     });
+
+    if (!options.verbose) {
+      console.log(chalk.gray('\n  使用 -v 查看详细信息'));
+    }
+    console.log();
   });
 
 // ccc use <profile>
@@ -369,6 +394,66 @@ program
 
     setDefaultProfile(profile);
     console.log(chalk.green(`✓ 默认 profile 已设置为 "${profile}"`));
+  });
+
+// ccc show [profile] - 显示完整配置
+program
+  .command('show [profile]')
+  .description('显示 profile 的完整配置')
+  .action(async (profile) => {
+    const profiles = getProfiles();
+
+    if (profiles.length === 0) {
+      console.log(chalk.yellow('没有可用的 profiles'));
+      process.exit(0);
+    }
+
+    // 如果没有指定 profile，交互选择
+    if (!profile) {
+      const defaultProfile = getDefaultProfile();
+      const { selectedProfile } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'selectedProfile',
+          message: '选择要查看的配置:',
+          choices: profiles,
+          default: defaultProfile
+        }
+      ]);
+      profile = selectedProfile;
+    }
+
+    if (!profileExists(profile)) {
+      console.log(chalk.red(`Profile "${profile}" 不存在`));
+      process.exit(1);
+    }
+
+    const profilePath = getProfilePath(profile);
+    const settings = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
+    const isDefault = getDefaultProfile() === profile;
+
+    console.log(chalk.cyan.bold(`\n  Profile: ${profile}`) + (isDefault ? chalk.green(' (默认)') : ''));
+    console.log(chalk.gray(`  路径: ${profilePath}\n`));
+
+    // 格式化显示配置
+    const formatValue = (key, value) => {
+      if (key === 'apiKey' && value) {
+        return chalk.yellow(value.substring(0, 15) + '...');
+      }
+      if (typeof value === 'boolean') {
+        return value ? chalk.green('true') : chalk.red('false');
+      }
+      if (typeof value === 'object') {
+        return chalk.gray(JSON.stringify(value, null, 2).split('\n').join('\n      '));
+      }
+      return chalk.white(value);
+    };
+
+    Object.entries(settings).forEach(([key, value]) => {
+      console.log(`  ${chalk.cyan(key)}: ${formatValue(key, value)}`);
+    });
+
+    console.log();
   });
 
 // ccc import
@@ -802,7 +887,7 @@ program
 
     if (profile) {
       // 检查是否是子命令
-      if (['list', 'ls', 'use', 'import', 'new', 'sync', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
+      if (['list', 'ls', 'use', 'show', 'import', 'new', 'sync', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
         return; // 让子命令处理
       }
       launchClaude(profile, dangerouslySkipPermissions);
