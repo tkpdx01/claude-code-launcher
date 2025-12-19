@@ -26,7 +26,7 @@ const program = new Command();
 program
   .name('ccc')
   .description('Claude Code Settings Launcher - 管理多个 Claude Code 配置文件')
-  .version('1.2.0');
+  .version('0.2.0');
 
 // 注册所有命令
 listCommand(program);
