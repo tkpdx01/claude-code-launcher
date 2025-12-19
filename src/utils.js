@@ -45,6 +45,9 @@ export function convertToClaudeSettings(provider, template) {
   const apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || config.apiKey || '';
   const apiUrl = env.ANTHROPIC_BASE_URL || config.apiUrl || provider.websiteUrl || '';
 
+  // 提取 model 设置
+  const model = config.model || '';
+
   // 只保留模板设置，替换 env 中的 API 信息
   const settings = {
     ...baseSettings,
@@ -54,6 +57,11 @@ export function convertToClaudeSettings(provider, template) {
       ANTHROPIC_BASE_URL: apiUrl
     }
   };
+
+  // 如果有 model 设置，添加到配置中
+  if (model) {
+    settings.model = model;
+  }
 
   return settings;
 }
