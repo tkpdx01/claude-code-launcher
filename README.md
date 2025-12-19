@@ -2,6 +2,8 @@
 
 Claude Code Settings Launcher - Manage multiple Claude Code profiles with different API configurations.
 
+📖 [中文版本](README-CN.md) | [English Version](README.md)
+
 ## Installation
 
 ```bash
