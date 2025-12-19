@@ -8,6 +8,7 @@ import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
 import readline from 'readline';
+import Table from 'cli-table3';
 
 const program = new Command();
 
@@ -82,8 +83,7 @@ function showHelp() {
   console.log();
 
   console.log(chalk.yellow('  管理命令:'));
-  console.log(chalk.gray('    ccc list, ls           ') + '列出所有配置');
-  console.log(chalk.gray('    ccc list -v            ') + '列出配置（含 API URL）');
+  console.log(chalk.gray('    ccc list, ls           ') + '列出所有配置（表格显示）');
   console.log(chalk.gray('    ccc show [profile]     ') + '显示完整配置');
   console.log(chalk.gray('    ccc use <profile>      ') + '设置默认配置');
   console.log(chalk.gray('    ccc new [name]         ') + '基于模板创建新配置');
@@ -333,15 +333,14 @@ async function importProfile() {
 program
   .name('ccc')
   .description('Claude Code Settings Launcher - 管理多个 Claude Code 配置文件')
-  .version('1.1.0');
+  .version('1.1.1');
 
 // ccc list
 program
   .command('list')
   .alias('ls')
   .description('列出所有 profiles')
-  .option('-v, --verbose', '显示详细信息')
-  .action((options) => {
+  .action(() => {
     const profiles = getProfiles();
     const defaultProfile = getDefaultProfile();
 
@@ -351,34 +350,36 @@ program
       return;
     }
 
-    console.log(chalk.cyan(`\n可用的 Profiles (${profiles.length} 个):\n`));
-
-    profiles.forEach(p => {
-      const isDefault = p === defaultProfile;
-      const marker = isDefault ? chalk.green(' *') : '  ';
-
-      if (options.verbose) {
-        // 详细模式：显示 API URL
-        const profilePath = getProfilePath(p);
-        try {
-          const settings = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
-          const apiUrl = settings.apiUrl || chalk.gray('(未设置)');
-          console.log(`${marker}${chalk.white(p)}`);
-          console.log(chalk.gray(`    ${apiUrl}`));
-        } catch {
-          console.log(`${marker}${chalk.white(p)} ${chalk.red('(读取失败)')}`);
-        }
-      } else {
-        // 简洁模式
-        const defaultLabel = isDefault ? chalk.green(' (默认)') : '';
-        console.log(`  ${chalk.white(p)}${defaultLabel}`);
+    const table = new Table({
+      head: [chalk.cyan('Profile'), chalk.cyan('API URL')],
+      style: { head: [], border: [] },
+      chars: {
+        'top': '─', 'top-mid': '┬', 'top-left': '┌', 'top-right': '┐',
+        'bottom': '─', 'bottom-mid': '┴', 'bottom-left': '└', 'bottom-right': '┘',
+        'left': '│', 'left-mid': '├', 'mid': '─', 'mid-mid': '┼',
+        'right': '│', 'right-mid': '┤', 'middle': '│'
       }
     });
 
-    if (!options.verbose) {
-      console.log(chalk.gray('\n  使用 -v 查看详细信息'));
-    }
+    profiles.forEach(p => {
+      const isDefault = p === defaultProfile;
+      const profilePath = getProfilePath(p);
+      let apiUrl = chalk.gray('(未设置)');
+
+      try {
+        const settings = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
+        apiUrl = settings.apiUrl || chalk.gray('(未设置)');
+      } catch {
+        apiUrl = chalk.red('(读取失败)');
+      }
+
+      const name = isDefault ? chalk.green(`${p} *`) : p;
+      table.push([name, apiUrl]);
+    });
+
     console.log();
+    console.log(table.toString());
+    console.log(chalk.gray(`\n  共 ${profiles.length} 个配置，* 表示默认\n`));
   });
 
 // ccc use <profile>
