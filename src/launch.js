@@ -49,8 +49,8 @@ export async function selectProfile(dangerouslySkipPermissions = false) {
 
   const defaultProfile = getDefaultProfile();
 
-  const choices = profiles.map(p => ({
-    name: p === defaultProfile ? `${p} ${chalk.green('(默认)')}` : p,
+  const choices = profiles.map((p, index) => ({
+    name: p === defaultProfile ? `${index + 1}. ${p} ${chalk.green('(默认)')}` : `${index + 1}. ${p}`,
     value: p
   }));
 
