@@ -1,15 +1,16 @@
 import fs from 'fs';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
-import { 
-  getProfiles, 
-  getDefaultProfile, 
-  profileExists, 
-  getProfilePath, 
-  readProfile, 
-  saveProfile, 
+import {
+  getProfiles,
+  getDefaultProfile,
+  profileExists,
+  getProfilePath,
+  readProfile,
+  saveProfile,
   setDefaultProfile,
-  deleteProfile 
+  deleteProfile,
+  resolveProfile
 } from '../profiles.js';
 
 export function editCommand(program) {
@@ -36,11 +37,14 @@ export function editCommand(program) {
           }
         ]);
         profile = selectedProfile;
-      }
-
-      if (!profileExists(profile)) {
-        console.log(chalk.red(`Profile "${profile}" 不存在`));
-        process.exit(1);
+      } else {
+        // 支持序号或名称
+        const resolved = resolveProfile(profile);
+        if (!resolved) {
+          console.log(chalk.red(`Profile "${profile}" 不存在`));
+          process.exit(1);
+        }
+        profile = resolved;
       }
 
       const currentSettings = readProfile(profile);
