@@ -15,6 +15,7 @@ const program = new Command();
 const CONFIG_DIR = path.join(os.homedir(), '.ccc');
 const PROFILES_DIR = path.join(CONFIG_DIR, 'profiles');
 const DEFAULT_FILE = path.join(CONFIG_DIR, 'default');
+const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
 // 确保目录存在
 function ensureDirs() {
@@ -55,6 +56,52 @@ function getProfilePath(name) {
 // 检查 profile 是否存在
 function profileExists(name) {
   return fs.existsSync(getProfilePath(name));
+}
+
+// 获取 Claude 默认 settings 模板
+function getClaudeSettingsTemplate() {
+  if (fs.existsSync(CLAUDE_SETTINGS_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+// 显示帮助信息
+function showHelp() {
+  console.log(chalk.cyan.bold('\n  CCC - Claude Code Settings Launcher\n'));
+  console.log(chalk.white('  管理多个 Claude Code 配置文件，快速切换不同的 API 设置\n'));
+
+  console.log(chalk.yellow('  启动命令:'));
+  console.log(chalk.gray('    ccc                    ') + '使用默认配置启动，无默认则交互选择');
+  console.log(chalk.gray('    ccc <profile>          ') + '使用指定配置启动 Claude');
+  console.log(chalk.gray('    ccc -d, --ddd          ') + '启动时添加 --dangerously-skip-permissions');
+  console.log();
+
+  console.log(chalk.yellow('  管理命令:'));
+  console.log(chalk.gray('    ccc list, ls           ') + '列出所有配置');
+  console.log(chalk.gray('    ccc use <profile>      ') + '设置默认配置');
+  console.log(chalk.gray('    ccc new [name]         ') + '基于模板创建新配置');
+  console.log(chalk.gray('    ccc import             ') + '从粘贴文本导入（自动识别 URL/Token）');
+  console.log(chalk.gray('    ccc edit [profile]     ') + '编辑配置');
+  console.log(chalk.gray('    ccc delete, rm [name]  ') + '删除配置');
+  console.log(chalk.gray('    ccc help               ') + '显示此帮助信息');
+  console.log();
+
+  console.log(chalk.yellow('  配置存储:'));
+  console.log(chalk.gray('    ~/.ccc/profiles/       ') + '配置文件目录');
+  console.log(chalk.gray('    ~/.claude/settings.json') + '模板来源（用于 ccc new）');
+  console.log();
+
+  console.log(chalk.yellow('  示例:'));
+  console.log(chalk.gray('    ccc new kfc            ') + '基于模板创建名为 kfc 的配置');
+  console.log(chalk.gray('    ccc kfc                ') + '使用 kfc 配置启动');
+  console.log(chalk.gray('    ccc kfc -d             ') + '使用 kfc 配置 + 跳过权限确认启动');
+  console.log(chalk.gray('    ccc use kfc            ') + '将 kfc 设为默认');
+  console.log();
 }
 
 // 启动 claude
@@ -328,6 +375,120 @@ program
   .description('从粘贴的文本中导入配置（自动识别 URL 和 Token）')
   .action(importProfile);
 
+// ccc new [name] - 基于模板创建新配置
+program
+  .command('new [name]')
+  .description('基于 ~/.claude/settings.json 模板创建新配置')
+  .action(async (name) => {
+    const template = getClaudeSettingsTemplate();
+
+    // 显示模板状态
+    if (template) {
+      console.log(chalk.green('✓ 检测到模板文件: ~/.claude/settings.json'));
+      console.log(chalk.gray('  将基于此模板创建新配置\n'));
+    } else {
+      console.log(chalk.yellow('! 未找到模板文件: ~/.claude/settings.json'));
+      console.log(chalk.gray('  将创建空白配置\n'));
+    }
+
+    // 如果没有提供名称，询问
+    if (!name) {
+      const { profileName } = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'profileName',
+          message: '配置名称:',
+          validate: (input) => input.trim() ? true : '请输入配置名称'
+        }
+      ]);
+      name = profileName;
+    }
+
+    // 检查是否已存在
+    if (profileExists(name)) {
+      const { overwrite } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'overwrite',
+          message: `配置 "${name}" 已存在，是否覆盖?`,
+          default: false
+        }
+      ]);
+      if (!overwrite) {
+        console.log(chalk.yellow('已取消'));
+        process.exit(0);
+      }
+    }
+
+    // 基于模板创建，但需要用户填写 API 信息
+    const baseSettings = template || {};
+
+    // 显示模板中已有的设置（如果有）
+    if (template) {
+      console.log(chalk.cyan('模板中的现有设置:'));
+      if (template.apiUrl) console.log(chalk.gray(`  API URL: ${template.apiUrl}`));
+      if (template.apiKey) console.log(chalk.gray(`  API Key: ${template.apiKey.substring(0, 10)}...`));
+      const otherKeys = Object.keys(template).filter(k => !['apiUrl', 'apiKey'].includes(k));
+      if (otherKeys.length > 0) {
+        console.log(chalk.gray(`  其他设置: ${otherKeys.join(', ')}`));
+      }
+      console.log();
+    }
+
+    const { apiUrl, apiKey } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'apiUrl',
+        message: 'API URL:',
+        default: baseSettings.apiUrl || 'https://api.anthropic.com'
+      },
+      {
+        type: 'input',
+        name: 'apiKey',
+        message: 'API Key:',
+        default: baseSettings.apiKey || ''
+      }
+    ]);
+
+    // 合并设置：保留模板中的其他设置，覆盖 API 相关设置
+    const newSettings = {
+      ...baseSettings,
+      apiUrl,
+      apiKey
+    };
+
+    ensureDirs();
+    fs.writeFileSync(getProfilePath(name), JSON.stringify(newSettings, null, 2));
+    console.log(chalk.green(`\n✓ 配置 "${name}" 已创建`));
+
+    // 如果是第一个 profile，设为默认
+    const profiles = getProfiles();
+    if (profiles.length === 1) {
+      setDefaultProfile(name);
+      console.log(chalk.green(`✓ 已设为默认配置`));
+    }
+
+    // 询问是否立即使用
+    const { useNow } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'useNow',
+        message: '是否立即启动 Claude?',
+        default: false
+      }
+    ]);
+
+    if (useNow) {
+      launchClaude(name);
+    }
+  });
+
+// ccc help
+program
+  .command('help')
+  .description('显示帮助信息')
+  .action(showHelp);
+
 // ccc edit <profile>
 program
   .command('edit [profile]')
@@ -481,7 +642,7 @@ program
 
     if (profile) {
       // 检查是否是子命令
-      if (['list', 'ls', 'use', 'import', 'edit', 'delete', 'rm'].includes(profile)) {
+      if (['list', 'ls', 'use', 'import', 'new', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
         return; // 让子命令处理
       }
       launchClaude(profile, dangerouslySkipPermissions);
