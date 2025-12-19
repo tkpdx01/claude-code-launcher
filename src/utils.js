@@ -35,7 +35,7 @@ export function sanitizeProfileName(name) {
     .substring(0, 50);              // 限制长度
 }
 
-// 将导入的配置转换为 Claude Code settings 格式
+// 将导入的配置转换为 Claude Code settings 格式（只保留 apiUrl 和 apiKey）
 export function convertToClaudeSettings(provider, template) {
   const baseSettings = template || {};
   const config = provider.settingsConfig || {};
@@ -45,34 +45,12 @@ export function convertToClaudeSettings(provider, template) {
   const apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || config.apiKey || '';
   const apiUrl = env.ANTHROPIC_BASE_URL || config.apiUrl || provider.websiteUrl || '';
 
-  // 构建完整的 settings
-  const settings = {
+  // 只保留模板设置 + apiUrl + apiKey
+  return {
     ...baseSettings,
     apiUrl: apiUrl,
     apiKey: apiKey
   };
-
-  // 保留原始配置中的其他设置
-  if (config.model) settings.model = config.model;
-  if (config.alwaysThinkingEnabled !== undefined) settings.alwaysThinkingEnabled = config.alwaysThinkingEnabled;
-  if (config.includeCoAuthoredBy !== undefined) settings.includeCoAuthoredBy = config.includeCoAuthoredBy;
-  if (config.permissions) settings.permissions = config.permissions;
-
-  // 保留 env 中的其他环境变量
-  if (env) {
-    if (!settings.env) settings.env = {};
-    for (const [key, value] of Object.entries(env)) {
-      if (key !== 'ANTHROPIC_AUTH_TOKEN' && key !== 'ANTHROPIC_API_KEY' && key !== 'ANTHROPIC_BASE_URL') {
-        settings.env[key] = value;
-      }
-    }
-    // 如果 env 为空，删除它
-    if (Object.keys(settings.env).length === 0) {
-      delete settings.env;
-    }
-  }
-
-  return settings;
 }
 
 // 格式化显示配置值
