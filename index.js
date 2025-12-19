@@ -28,11 +28,42 @@ function ensureDirs() {
   }
 }
 
-// 获取所有 profiles
+// 获取所有 profiles（按 a-z 排序）
 function getProfiles() {
   ensureDirs();
   const files = fs.readdirSync(PROFILES_DIR);
-  return files.filter(f => f.endsWith('.json')).map(f => f.replace('.json', ''));
+  return files
+    .filter(f => f.endsWith('.json'))
+    .map(f => f.replace('.json', ''))
+    .sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
+}
+
+// 获取带序号的 profiles 映射 { 序号: profileName }
+function getProfilesWithIndex() {
+  const profiles = getProfiles();
+  const map = {};
+  profiles.forEach((p, i) => {
+    map[i + 1] = p;
+  });
+  return { profiles, map };
+}
+
+// 根据序号或名称解析 profile
+function resolveProfile(input) {
+  const { profiles, map } = getProfilesWithIndex();
+
+  // 尝试作为数字序号
+  const num = parseInt(input, 10);
+  if (!isNaN(num) && map[num]) {
+    return map[num];
+  }
+
+  // 作为名称
+  if (profiles.includes(input)) {
+    return input;
+  }
+
+  return null;
 }
 
 // 获取默认 profile
@@ -78,16 +109,18 @@ function showHelp() {
 
   console.log(chalk.yellow('  启动命令:'));
   console.log(chalk.gray('    ccc                    ') + '使用默认配置启动，无默认则交互选择');
-  console.log(chalk.gray('    ccc <profile>          ') + '使用指定配置启动 Claude');
+  console.log(chalk.gray('    ccc <profile>          ') + '使用指定配置启动（支持名称或序号）');
+  console.log(chalk.gray('    ccc <序号>             ') + '使用序号启动（如 ccc 1）');
   console.log(chalk.gray('    ccc -d, --ddd          ') + '启动时添加 --dangerously-skip-permissions');
   console.log();
 
   console.log(chalk.yellow('  管理命令:'));
-  console.log(chalk.gray('    ccc list, ls           ') + '列出所有配置（表格显示）');
+  console.log(chalk.gray('    ccc list, ls           ') + '列出所有配置（带序号，按 a-z 排序）');
   console.log(chalk.gray('    ccc show [profile]     ') + '显示完整配置');
   console.log(chalk.gray('    ccc use <profile>      ') + '设置默认配置');
   console.log(chalk.gray('    ccc new [name]         ') + '基于模板创建新配置');
   console.log(chalk.gray('    ccc import             ') + '从粘贴文本导入（自动识别 URL/Token）');
+  console.log(chalk.gray('    ccc import-file, if    ') + '从文件导入（自动识别格式）');
   console.log(chalk.gray('    ccc sync [profile]     ') + '同步模板设置（保留 API 配置）');
   console.log(chalk.gray('    ccc sync -a, --all     ') + '同步所有配置');
   console.log(chalk.gray('    ccc edit [profile]     ') + '编辑配置');
@@ -100,11 +133,17 @@ function showHelp() {
   console.log(chalk.gray('    ~/.claude/settings.json') + '模板来源（用于 ccc new）');
   console.log();
 
+  console.log(chalk.yellow('  支持的导入格式:'));
+  console.log(chalk.gray('    CC-Switch SQL          ') + '自动识别 INSERT INTO providers 语句');
+  console.log(chalk.gray('    All API Hub JSON       ') + '自动识别 accounts.accounts 结构');
+  console.log();
+
   console.log(chalk.yellow('  示例:'));
-  console.log(chalk.gray('    ccc new kfc            ') + '基于模板创建名为 kfc 的配置');
-  console.log(chalk.gray('    ccc kfc                ') + '使用 kfc 配置启动');
-  console.log(chalk.gray('    ccc kfc -d             ') + '使用 kfc 配置 + 跳过权限确认启动');
-  console.log(chalk.gray('    ccc use kfc            ') + '将 kfc 设为默认');
+  console.log(chalk.gray('    ccc ls                 ') + '查看配置列表和序号');
+  console.log(chalk.gray('    ccc 3                  ') + '启动第 3 个配置');
+  console.log(chalk.gray('    ccc 3 -d               ') + '启动第 3 个配置 + 跳过权限');
+  console.log(chalk.gray('    ccc kfc                ') + '使用名称启动');
+  console.log(chalk.gray('    ccc if export.sql      ') + '从文件导入配置');
   console.log();
 }
 
@@ -351,7 +390,7 @@ program
     }
 
     const table = new Table({
-      head: [chalk.cyan('Profile'), chalk.cyan('API URL')],
+      head: [chalk.cyan('#'), chalk.cyan('Profile'), chalk.cyan('API URL')],
       style: { head: [], border: [] },
       chars: {
         'top': '─', 'top-mid': '┬', 'top-left': '┌', 'top-right': '┐',
@@ -361,7 +400,7 @@ program
       }
     });
 
-    profiles.forEach(p => {
+    profiles.forEach((p, index) => {
       const isDefault = p === defaultProfile;
       const profilePath = getProfilePath(p);
       let apiUrl = chalk.gray('(未设置)');
@@ -373,13 +412,14 @@ program
         apiUrl = chalk.red('(读取失败)');
       }
 
+      const num = isDefault ? chalk.green(`${index + 1}`) : chalk.gray(`${index + 1}`);
       const name = isDefault ? chalk.green(`${p} *`) : p;
-      table.push([name, apiUrl]);
+      table.push([num, name, apiUrl]);
     });
 
     console.log();
     console.log(table.toString());
-    console.log(chalk.gray(`\n  共 ${profiles.length} 个配置，* 表示默认\n`));
+    console.log(chalk.gray(`\n  共 ${profiles.length} 个配置，* 表示默认，可用序号或名称启动\n`));
   });
 
 // ccc use <profile>
@@ -462,6 +502,389 @@ program
   .command('import')
   .description('从粘贴的文本中导入配置（自动识别 URL 和 Token）')
   .action(importProfile);
+
+// 解析 CC-Switch SQL 导出文件
+function parseCCSwitchSQL(content) {
+  const providers = [];
+  // 匹配 INSERT INTO "providers" 语句
+  const insertRegex = /INSERT INTO "providers" \([^)]+\) VALUES \(([^;]+)\);/g;
+  let match;
+
+  while ((match = insertRegex.exec(content)) !== null) {
+    try {
+      const valuesStr = match[1];
+      // 解析 VALUES 中的各个字段
+      // 格式: 'id', 'app_type', 'name', 'settings_config', 'website_url', ...
+      const values = [];
+      let current = '';
+      let inQuote = false;
+      let quoteChar = '';
+      let depth = 0;
+
+      for (let i = 0; i < valuesStr.length; i++) {
+        const char = valuesStr[i];
+
+        if (!inQuote && (char === "'" || char === '"')) {
+          inQuote = true;
+          quoteChar = char;
+          current += char;
+        } else if (inQuote && char === quoteChar && valuesStr[i-1] !== '\\') {
+          // 检查是否是转义的引号 ''
+          if (valuesStr[i+1] === quoteChar) {
+            current += char;
+            i++; // 跳过下一个引号
+            current += valuesStr[i];
+          } else {
+            inQuote = false;
+            quoteChar = '';
+            current += char;
+          }
+        } else if (!inQuote && char === ',' && depth === 0) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      if (current.trim()) {
+        values.push(current.trim());
+      }
+
+      // 清理值（去除引号）
+      const cleanValue = (v) => {
+        if (!v || v === 'NULL') return null;
+        if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+          return v.slice(1, -1).replace(/''/g, "'");
+        }
+        return v;
+      };
+
+      const id = cleanValue(values[0]);
+      const appType = cleanValue(values[1]);
+      const name = cleanValue(values[2]);
+      const settingsConfigStr = cleanValue(values[3]);
+      const websiteUrl = cleanValue(values[4]);
+
+      // 只处理 claude 类型
+      if (appType === 'claude' && settingsConfigStr) {
+        try {
+          const settingsConfig = JSON.parse(settingsConfigStr);
+          providers.push({
+            id,
+            name,
+            websiteUrl,
+            settingsConfig
+          });
+        } catch (e) {
+          // JSON 解析失败，跳过
+        }
+      }
+    } catch (e) {
+      // 解析失败，跳过
+    }
+  }
+
+  return providers;
+}
+
+// 解析 All API Hub JSON 导出文件
+function parseAllApiHubJSON(content) {
+  try {
+    const data = JSON.parse(content);
+    const accounts = data.accounts?.accounts || [];
+
+    return accounts.map(account => {
+      // 从 site_url 提取 base URL
+      let baseUrl = account.site_url;
+      if (!baseUrl.startsWith('http')) {
+        baseUrl = 'https://' + baseUrl;
+      }
+
+      // access_token 需要解码（Base64）然后作为 API key
+      let apiKey = '';
+      if (account.account_info?.access_token) {
+        // All API Hub 的 access_token 是加密的，我们使用原始值
+        // 实际上需要生成 sk- 格式的 token
+        // 这里我们用 site_url + username 来生成一个标识
+        apiKey = `sk-${account.account_info.access_token.replace(/[^a-zA-Z0-9]/g, '')}`;
+      }
+
+      return {
+        id: account.id,
+        name: account.site_name,
+        websiteUrl: baseUrl,
+        settingsConfig: {
+          env: {
+            ANTHROPIC_AUTH_TOKEN: apiKey,
+            ANTHROPIC_BASE_URL: baseUrl
+          }
+        },
+        // 额外的元数据
+        meta: {
+          siteType: account.site_type,
+          health: account.health?.status,
+          quota: account.account_info?.quota,
+          username: account.account_info?.username
+        }
+      };
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+// 将导入的配置转换为 Claude Code settings 格式
+function convertToClaudeSettings(provider, template) {
+  const baseSettings = template || {};
+  const config = provider.settingsConfig || {};
+
+  // 从 env 中提取 API 信息
+  const env = config.env || {};
+  const apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || config.apiKey || '';
+  const apiUrl = env.ANTHROPIC_BASE_URL || config.apiUrl || provider.websiteUrl || '';
+
+  // 构建完整的 settings
+  const settings = {
+    ...baseSettings,
+    apiUrl: apiUrl,
+    apiKey: apiKey
+  };
+
+  // 保留原始配置中的其他设置
+  if (config.model) settings.model = config.model;
+  if (config.alwaysThinkingEnabled !== undefined) settings.alwaysThinkingEnabled = config.alwaysThinkingEnabled;
+  if (config.includeCoAuthoredBy !== undefined) settings.includeCoAuthoredBy = config.includeCoAuthoredBy;
+  if (config.permissions) settings.permissions = config.permissions;
+
+  // 保留 env 中的其他环境变量
+  if (env) {
+    if (!settings.env) settings.env = {};
+    for (const [key, value] of Object.entries(env)) {
+      if (key !== 'ANTHROPIC_AUTH_TOKEN' && key !== 'ANTHROPIC_API_KEY' && key !== 'ANTHROPIC_BASE_URL') {
+        settings.env[key] = value;
+      }
+    }
+    // 如果 env 为空，删除它
+    if (Object.keys(settings.env).length === 0) {
+      delete settings.env;
+    }
+  }
+
+  return settings;
+}
+
+// 生成安全的 profile 名称
+function sanitizeProfileName(name) {
+  return name
+    .replace(/[<>:"/\\|?*]/g, '_')  // 替换 Windows 非法字符
+    .replace(/\s+/g, '_')           // 替换空格
+    .replace(/_+/g, '_')            // 合并多个下划线
+    .replace(/^_|_$/g, '')          // 去除首尾下划线
+    .substring(0, 50);              // 限制长度
+}
+
+// 检测文件格式
+function detectFileFormat(content) {
+  // 检测 CC-Switch SQL 格式
+  if (content.includes('INSERT INTO "providers"') && content.includes('app_type')) {
+    return 'ccswitch';
+  }
+
+  // 检测 All API Hub JSON 格式
+  try {
+    const data = JSON.parse(content);
+    if (data.accounts?.accounts && Array.isArray(data.accounts.accounts)) {
+      // 检查是否有 All API Hub 特有的字段
+      const firstAccount = data.accounts.accounts[0];
+      if (firstAccount && (firstAccount.site_name || firstAccount.site_url || firstAccount.account_info)) {
+        return 'allapihub';
+      }
+    }
+  } catch {
+    // 不是有效的 JSON
+  }
+
+  return null;
+}
+
+// ccc import-file <file> - 从文件导入（自动识别格式）
+program
+  .command('import-file <file>')
+  .alias('if')
+  .description('从文件导入配置（自动识别 CC-Switch SQL 或 All API Hub JSON）')
+  .action(async (file) => {
+    // 检查文件是否存在
+    const filePath = path.resolve(file);
+    if (!fs.existsSync(filePath)) {
+      console.log(chalk.red(`文件不存在: ${filePath}`));
+      process.exit(1);
+    }
+
+    console.log(chalk.cyan(`读取文件: ${filePath}\n`));
+    const content = fs.readFileSync(filePath, 'utf-8');
+
+    // 自动检测格式
+    const format = detectFileFormat(content);
+
+    if (!format) {
+      console.log(chalk.red('无法识别文件格式'));
+      console.log(chalk.gray('支持的格式:'));
+      console.log(chalk.gray('  - CC-Switch SQL 导出文件 (.sql)'));
+      console.log(chalk.gray('  - All API Hub JSON 导出文件 (.json)'));
+      process.exit(1);
+    }
+
+    // 获取模板
+    const template = getClaudeSettingsTemplate();
+
+    let providers = [];
+    let formatName = '';
+
+    if (format === 'ccswitch') {
+      formatName = 'CC-Switch SQL';
+      providers = parseCCSwitchSQL(content);
+    } else if (format === 'allapihub') {
+      formatName = 'All API Hub JSON';
+      providers = parseAllApiHubJSON(content);
+    }
+
+    if (providers.length === 0) {
+      console.log(chalk.yellow('未找到有效的配置'));
+      process.exit(0);
+    }
+
+    console.log(chalk.green(`✓ 识别到 ${formatName} 格式`));
+    console.log(chalk.green(`✓ 找到 ${providers.length} 个配置\n`));
+
+    // 显示模板状态
+    if (template) {
+      console.log(chalk.gray('将使用 ~/.claude/settings.json 作为模板合并设置\n'));
+    }
+
+    // 显示找到的配置
+    const table = new Table({
+      head: [chalk.cyan('#'), chalk.cyan('Profile 名称'), chalk.cyan('API URL'), chalk.cyan('备注')],
+      style: { head: [], border: [] }
+    });
+
+    providers.forEach((p, i) => {
+      const url = p.settingsConfig?.env?.ANTHROPIC_BASE_URL || p.websiteUrl || '(未设置)';
+      const profileName = sanitizeProfileName(p.name);
+      let note = '';
+
+      if (format === 'ccswitch') {
+        note = p.settingsConfig?.model || '(默认模型)';
+      } else if (format === 'allapihub') {
+        note = p.meta?.health === 'healthy' ? chalk.green('健康') :
+               p.meta?.health === 'warning' ? chalk.yellow('警告') :
+               p.meta?.health === 'error' ? chalk.red('错误') : chalk.gray('未知');
+      }
+
+      table.push([i + 1, profileName, url, note]);
+    });
+
+    console.log(table.toString());
+    console.log();
+
+    // All API Hub 特殊警告
+    if (format === 'allapihub') {
+      console.log(chalk.yellow('⚠ 注意: All API Hub 的 access_token 格式可能需要手动调整'));
+      console.log(chalk.gray('  导入后可使用 "ccc edit <profile>" 修改 API Key\n'));
+    }
+
+    // 确认导入
+    const { confirmImport } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'confirmImport',
+        message: `确定要导入这 ${providers.length} 个配置吗?`,
+        default: true
+      }
+    ]);
+
+    if (!confirmImport) {
+      console.log(chalk.yellow('已取消'));
+      process.exit(0);
+    }
+
+    // 选择要导入的配置
+    const { selection } = await inquirer.prompt([
+      {
+        type: 'checkbox',
+        name: 'selection',
+        message: '选择要导入的配置 (空格选择，回车确认):',
+        choices: providers.map((p, i) => {
+          const profileName = sanitizeProfileName(p.name);
+          const url = p.settingsConfig?.env?.ANTHROPIC_BASE_URL || p.websiteUrl || '';
+          return {
+            name: `${profileName} (${url})`,
+            value: i,
+            checked: format === 'allapihub' ? p.meta?.health === 'healthy' : true
+          };
+        })
+      }
+    ]);
+
+    const selectedProviders = selection.map(i => providers[i]);
+
+    if (selectedProviders.length === 0) {
+      console.log(chalk.yellow('未选择任何配置'));
+      process.exit(0);
+    }
+
+    // 导入选中的配置
+    ensureDirs();
+    let imported = 0;
+    let skipped = 0;
+
+    for (const provider of selectedProviders) {
+      const profileName = sanitizeProfileName(provider.name);
+      const profilePath = getProfilePath(profileName);
+
+      // 检查是否已存在
+      if (fs.existsSync(profilePath)) {
+        const { overwrite } = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'overwrite',
+            message: `配置 "${profileName}" 已存在，是否覆盖?`,
+            default: false
+          }
+        ]);
+
+        if (!overwrite) {
+          skipped++;
+          continue;
+        }
+      }
+
+      // 转换并保存配置
+      const settings = convertToClaudeSettings(provider, template);
+      fs.writeFileSync(profilePath, JSON.stringify(settings, null, 2));
+      console.log(chalk.green(`✓ ${profileName}`));
+      imported++;
+    }
+
+    console.log(chalk.green(`\n✓ 导入完成: ${imported} 个成功` + (skipped > 0 ? `, ${skipped} 个跳过` : '')));
+
+    // 如果是第一次导入，设置默认
+    const profiles = getProfiles();
+    if (profiles.length === imported && imported > 0) {
+      const { setDefault } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'setDefault',
+          message: '是否设置第一个配置为默认?',
+          default: true
+        }
+      ]);
+
+      if (setDefault) {
+        setDefaultProfile(profiles[0]);
+        console.log(chalk.green(`✓ 已设置 "${profiles[0]}" 为默认配置`));
+      }
+    }
+  });
 
 // ccc new [name] - 基于模板创建新配置
 program
@@ -597,8 +1020,8 @@ program
       process.exit(0);
     }
 
-    // 需要保留的字段
-    const preserveKeys = ['apiUrl', 'apiKey', 'includeCoAuthoredBy'];
+    // 需要保留的字段（每个 profile 独立的设置）
+    const preserveKeys = ['apiUrl', 'apiKey', 'includeCoAuthoredBy', 'model'];
 
     // 同步单个配置的函数
     const syncProfile = (name) => {
@@ -881,17 +1304,26 @@ program
 // ccc <profile> 或 ccc (无参数)
 // 使用 -d 或 --ddd 启用 dangerously-skip-permissions
 program
-  .argument('[profile]', '要使用的 profile 名称')
+  .argument('[profile]', '要使用的 profile 名称或序号')
   .option('-d, --ddd', '启用 --dangerously-skip-permissions 参数')
   .action(async (profile, options) => {
     const dangerouslySkipPermissions = options.ddd || false;
 
     if (profile) {
       // 检查是否是子命令
-      if (['list', 'ls', 'use', 'show', 'import', 'new', 'sync', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
+      if (['list', 'ls', 'use', 'show', 'import', 'import-file', 'if', 'new', 'sync', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
         return; // 让子命令处理
       }
-      launchClaude(profile, dangerouslySkipPermissions);
+
+      // 解析序号或名称
+      const resolvedProfile = resolveProfile(profile);
+      if (resolvedProfile) {
+        launchClaude(resolvedProfile, dangerouslySkipPermissions);
+      } else {
+        console.log(chalk.red(`Profile "${profile}" 不存在`));
+        console.log(chalk.yellow(`使用 "ccc list" 查看可用的 profiles`));
+        process.exit(1);
+      }
     } else {
       // 无参数，检查默认或交互选择
       const defaultProfile = getDefaultProfile();
