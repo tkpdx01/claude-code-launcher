@@ -35,7 +35,7 @@ export function sanitizeProfileName(name) {
     .substring(0, 50);              // 限制长度
 }
 
-// 将导入的配置转换为 Claude Code settings 格式（只保留 apiUrl 和 apiKey）
+// 将导入的配置转换为 Claude Code settings 格式
 export function convertToClaudeSettings(provider, template) {
   const baseSettings = template || {};
   const config = provider.settingsConfig || {};
@@ -45,12 +45,17 @@ export function convertToClaudeSettings(provider, template) {
   const apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || config.apiKey || '';
   const apiUrl = env.ANTHROPIC_BASE_URL || config.apiUrl || provider.websiteUrl || '';
 
-  // 只保留模板设置 + apiUrl + apiKey
-  return {
+  // 只保留模板设置，替换 env 中的 API 信息
+  const settings = {
     ...baseSettings,
-    apiUrl: apiUrl,
-    apiKey: apiKey
+    env: {
+      ...baseSettings.env,
+      ANTHROPIC_AUTH_TOKEN: apiKey,
+      ANTHROPIC_BASE_URL: apiUrl
+    }
   };
+
+  return settings;
 }
 
 // 格式化显示配置值
