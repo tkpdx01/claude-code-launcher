@@ -1,0 +1,25 @@
+{
+  "name": "ccc",
+  "version": "1.0.0",
+  "description": "Claude Code Settings Launcher - 管理多个 Claude Code 配置文件",
+  "main": "index.js",
+  "bin": {
+    "ccc": "./index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "node index.js"
+  },
+  "keywords": [
+    "claude",
+    "cli",
+    "settings"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0",
+    "chalk": "^5.3.0",
+    "inquirer": "^9.2.0"
+  }
+}
