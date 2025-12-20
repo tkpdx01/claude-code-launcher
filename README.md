@@ -1,8 +1,8 @@
 # claude-code-launcher (ccc)
 
-Claude Code Settings Launcher - Manage multiple Claude Code profiles with different API configurations.
+Claude Code Settings Launcher - Launch Claude Code with different settings profiles. Run multiple Claude instances with different API configurations simultaneously.
 
-Claude Code 设置启动器 - 管理多个 Claude Code 配置文件的不同 API 配置。
+Claude Code 设置启动器 - 使用不同的 settings profile 文件启动 Claude Code，可同时运行多个使用不同 API 配置的 Claude 实例。
 
 ## Compatibility / 兼容性
 
@@ -10,8 +10,8 @@ Tested export file versions / 已测试的导出文件版本：
 
 | Tool | Version | Export Format |
 |------|---------|---------------|
-| [cc-switch](https://github.com/anthropics/claude-code) | 3.8.2 | SQL |
-| [All API Hub](https://allapihub.com) | v2.26.1 | JSON |
+| [cc-switch](https://github.com/farion1231/cc-switch) | 3.8.2 | SQL |
+| [All API Hub](https://github.com/qixing-jk/all-api-hub) | v2.26.1 | JSON |
 
 ## Installation / 安装
 
