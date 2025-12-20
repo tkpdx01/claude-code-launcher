@@ -6,10 +6,12 @@ Claude Code 设置启动器 - 管理多个 Claude Code 配置文件的不同 API
 
 ## Compatibility / 兼容性
 
-| Tool | Version |
-|------|---------|
-| [cc-switch](https://github.com/anthropics/claude-code) | 3.8.2 |
-| [All API Hub](https://allapihub.com) | v2.26.1 |
+Tested export file versions / 已测试的导出文件版本：
+
+| Tool | Version | Export Format |
+|------|---------|---------------|
+| [cc-switch](https://github.com/anthropics/claude-code) | 3.8.2 | SQL |
+| [All API Hub](https://allapihub.com) | v2.26.1 | JSON |
 
 ## Installation / 安装
 
@@ -36,7 +38,7 @@ ccc list -v            # List with URLs / 显示 API URLs
 ccc show [profile]     # Show config / 显示完整配置
 ccc use <profile>      # Set default / 设置默认
 ccc new [name]         # Create from template / 从模板创建
-ccc import             # Import URL/Token / 导入 URL/Token
+ccc import             # Import from cc-switch SQL or All API Hub JSON / 导入 cc-switch SQL 或 All API Hub JSON
 ccc sync [profile]     # Sync from template / 从模板同步
 ccc sync -a            # Sync all / 同步所有
 ccc edit [profile]     # Edit profile / 编辑配置
