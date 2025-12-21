@@ -1,5 +1,5 @@
 {
-  "name": "claude-code-launcher",
+  "name": "@tkpdx01/ccc",
   "version": "1.2.1",
   "description": "Claude Code Settings Launcher - Manage multiple Claude Code profiles",
   "main": "index.js",
