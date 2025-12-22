@@ -34,8 +34,24 @@ export function listCommand(program) {
         let apiUrl = chalk.gray('(未设置)');
 
         if (settings) {
-          // 兼容两种格式：apiUrl 或 env.ANTHROPIC_BASE_URL
-          apiUrl = settings.apiUrl || settings.env?.ANTHROPIC_BASE_URL || chalk.gray('(未设置)');
+          // 兼容多种格式：
+          // 1. apiUrl 字段
+          // 2. env 对象格式: { ANTHROPIC_BASE_URL: "xxx" }
+          // 3. env 数组格式: ["ANTHROPIC_BASE_URL=xxx"]
+          if (settings.apiUrl) {
+            apiUrl = settings.apiUrl;
+          } else if (settings.env) {
+            if (Array.isArray(settings.env)) {
+              // 数组格式，用正则提取
+              const envLine = settings.env.find(e => /^ANTHROPIC_BASE_URL=/.test(e));
+              if (envLine) {
+                apiUrl = envLine.replace(/^ANTHROPIC_BASE_URL=/, '');
+              }
+            } else if (typeof settings.env === 'object') {
+              // 对象格式
+              apiUrl = settings.env.ANTHROPIC_BASE_URL || chalk.gray('(未设置)');
+            }
+          }
         } else {
           apiUrl = chalk.red('(读取失败)');
         }
