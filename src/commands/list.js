@@ -1,6 +1,7 @@
+import fs from 'fs';
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { getProfiles, getDefaultProfile, getProfilePath, readProfile } from '../profiles.js';
+import { getProfiles, getDefaultProfile, getProfilePath } from '../profiles.js';
 
 export function listCommand(program) {
   program
@@ -18,7 +19,7 @@ export function listCommand(program) {
       }
 
       const table = new Table({
-        head: [chalk.cyan('#'), chalk.cyan('Profile'), chalk.cyan('API URL')],
+        head: [chalk.cyan('#'), chalk.cyan('Profile'), chalk.cyan('ANTHROPIC_BASE_URL')],
         style: { head: [], border: [] },
         chars: {
           'top': '─', 'top-mid': '┬', 'top-left': '┌', 'top-right': '┐',
@@ -30,35 +31,23 @@ export function listCommand(program) {
 
       profiles.forEach((p, index) => {
         const isDefault = p === defaultProfile;
-        const settings = readProfile(p);
-        let apiUrl = chalk.gray('(未设置)');
+        const profilePath = getProfilePath(p);
+        let baseUrl = chalk.gray('(未设置)');
 
-        if (settings) {
-          // 兼容多种格式：
-          // 1. apiUrl 字段
-          // 2. env 对象格式: { ANTHROPIC_BASE_URL: "xxx" }
-          // 3. env 数组格式: ["ANTHROPIC_BASE_URL=xxx"]
-          if (settings.apiUrl) {
-            apiUrl = settings.apiUrl;
-          } else if (settings.env) {
-            if (Array.isArray(settings.env)) {
-              // 数组格式，用正则提取
-              const envLine = settings.env.find(e => /^ANTHROPIC_BASE_URL=/.test(e));
-              if (envLine) {
-                apiUrl = envLine.replace(/^ANTHROPIC_BASE_URL=/, '');
-              }
-            } else if (typeof settings.env === 'object') {
-              // 对象格式
-              apiUrl = settings.env.ANTHROPIC_BASE_URL || chalk.gray('(未设置)');
-            }
+        try {
+          const content = fs.readFileSync(profilePath, 'utf-8');
+          // 用正则从 JSON 文件内容中提取 ANTHROPIC_BASE_URL
+          const match = content.match(/"ANTHROPIC_BASE_URL"\s*:\s*"([^"]+)"/);
+          if (match && match[1]) {
+            baseUrl = match[1];
           }
-        } else {
-          apiUrl = chalk.red('(读取失败)');
+        } catch {
+          baseUrl = chalk.red('(读取失败)');
         }
 
         const num = isDefault ? chalk.green(`${index + 1}`) : chalk.gray(`${index + 1}`);
         const name = isDefault ? chalk.green(`${p} *`) : p;
-        table.push([num, name, apiUrl]);
+        table.push([num, name, baseUrl]);
       });
 
       console.log();
