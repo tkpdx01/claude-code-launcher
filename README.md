@@ -16,7 +16,7 @@ Tested export file versions / 已测试的导出文件版本：
 ## Installation / 安装
 
 ```bash
-npm install -g claude-code-launcher
+npm install -g @tkpdx01/ccc
 ```
 
 ## Usage / 使用
