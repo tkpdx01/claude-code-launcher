@@ -106,6 +106,65 @@ export function saveProfile(name, settings) {
   fs.writeFileSync(profilePath, JSON.stringify(settings, null, 2));
 }
 
+// 创建基于主配置的 profile（复制 ~/.claude/settings.json 并设置 env）
+export function createProfileFromTemplate(name, apiUrl, apiKey) {
+  const template = getClaudeSettingsTemplate() || {};
+
+  // 确保 env 对象存在
+  if (!template.env) {
+    template.env = {};
+  }
+
+  // 只设置 API 凭证到 env
+  template.env.ANTHROPIC_AUTH_TOKEN = apiKey;
+  template.env.ANTHROPIC_BASE_URL = apiUrl;
+
+  saveProfile(name, template);
+  return template;
+}
+
+// 同步主配置到 profile（保留 profile 的 API 凭证）
+export function syncProfileWithTemplate(name) {
+  const template = getClaudeSettingsTemplate();
+  if (!template) {
+    return null;
+  }
+
+  const currentProfile = readProfile(name);
+  if (!currentProfile) {
+    return null;
+  }
+
+  // 保存当前 profile 的 API 凭证（支持新旧格式）
+  const currentEnv = currentProfile.env || {};
+  const apiKey = currentEnv.ANTHROPIC_AUTH_TOKEN || currentProfile.ANTHROPIC_AUTH_TOKEN || '';
+  const apiUrl = currentEnv.ANTHROPIC_BASE_URL || currentProfile.ANTHROPIC_BASE_URL || '';
+
+  // 复制主配置
+  const newProfile = { ...template };
+
+  // 确保 env 对象存在并保留 API 凭证
+  newProfile.env = { ...(template.env || {}), ANTHROPIC_AUTH_TOKEN: apiKey, ANTHROPIC_BASE_URL: apiUrl };
+
+  saveProfile(name, newProfile);
+  return newProfile;
+}
+
+// 从 profile 中提取 API 凭证
+export function getProfileCredentials(name) {
+  const profile = readProfile(name);
+  if (!profile) {
+    return { apiKey: '', apiUrl: '' };
+  }
+
+  // 支持旧格式（直接在顶层）和新格式（在 env 中）
+  const env = profile.env || {};
+  return {
+    apiKey: env.ANTHROPIC_AUTH_TOKEN || profile.ANTHROPIC_AUTH_TOKEN || '',
+    apiUrl: env.ANTHROPIC_BASE_URL || profile.ANTHROPIC_BASE_URL || ''
+  };
+}
+
 // 删除 profile
 export function deleteProfile(name) {
   const profilePath = getProfilePath(name);

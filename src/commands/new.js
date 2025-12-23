@@ -4,7 +4,7 @@ import {
   ensureDirs,
   getProfiles,
   profileExists,
-  saveProfile,
+  createProfileFromTemplate,
   setDefaultProfile
 } from '../profiles.js';
 import { launchClaude } from '../launch.js';
@@ -12,7 +12,7 @@ import { launchClaude } from '../launch.js';
 export function newCommand(program) {
   program
     .command('new [name]')
-    .description('创建新的影子配置（只包含 API 凭证）')
+    .description('创建新的配置（基于 ~/.claude/settings.json，在 env 中设置 API 凭证）')
     .action(async (name) => {
       // 如果没有提供名称，询问
       if (!name) {
@@ -80,15 +80,9 @@ export function newCommand(program) {
         }
       }
 
-      // 影子配置只存储 API 凭证
-      const newSettings = {
-        ANTHROPIC_AUTH_TOKEN: apiKey,
-        ANTHROPIC_BASE_URL: apiUrl
-      };
-
       ensureDirs();
-      saveProfile(finalName, newSettings);
-      console.log(chalk.green(`\n✓ 配置 "${finalName}" 已创建`));
+      createProfileFromTemplate(finalName, apiUrl, apiKey);
+      console.log(chalk.green(`\n✓ 配置 "${finalName}" 已创建（基于 ~/.claude/settings.json）`));
 
       // 如果是第一个 profile，设为默认
       const profiles = getProfiles();

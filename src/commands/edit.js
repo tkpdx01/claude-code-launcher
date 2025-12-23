@@ -10,7 +10,9 @@ import {
   saveProfile,
   setDefaultProfile,
   deleteProfile,
-  resolveProfile
+  resolveProfile,
+  getProfileCredentials,
+  getClaudeSettingsTemplate
 } from '../profiles.js';
 
 export function editCommand(program) {
@@ -47,11 +49,12 @@ export function editCommand(program) {
         profile = resolved;
       }
 
-      const currentSettings = readProfile(profile);
+      // 使用新的 getProfileCredentials 函数获取凭证（支持新旧格式）
+      const { apiKey: currentApiKey, apiUrl: currentApiUrl } = getProfileCredentials(profile);
 
       console.log(chalk.cyan(`\n当前配置 (${profile}):`));
-      console.log(chalk.gray(`  ANTHROPIC_BASE_URL: ${currentSettings.ANTHROPIC_BASE_URL || '未设置'}`));
-      console.log(chalk.gray(`  ANTHROPIC_AUTH_TOKEN: ${currentSettings.ANTHROPIC_AUTH_TOKEN ? currentSettings.ANTHROPIC_AUTH_TOKEN.substring(0, 10) + '...' : '未设置'}`));
+      console.log(chalk.gray(`  ANTHROPIC_BASE_URL: ${currentApiUrl || '未设置'}`));
+      console.log(chalk.gray(`  ANTHROPIC_AUTH_TOKEN: ${currentApiKey ? currentApiKey.substring(0, 10) + '...' : '未设置'}`));
       console.log();
 
       const { apiUrl, apiKey, newName } = await inquirer.prompt([
@@ -59,13 +62,13 @@ export function editCommand(program) {
           type: 'input',
           name: 'apiUrl',
           message: 'ANTHROPIC_BASE_URL:',
-          default: currentSettings.ANTHROPIC_BASE_URL || ''
+          default: currentApiUrl || ''
         },
         {
           type: 'input',
           name: 'apiKey',
           message: 'ANTHROPIC_AUTH_TOKEN:',
-          default: currentSettings.ANTHROPIC_AUTH_TOKEN || ''
+          default: currentApiKey || ''
         },
         {
           type: 'input',
@@ -75,11 +78,22 @@ export function editCommand(program) {
         }
       ]);
 
-      // 影子配置只存储 API 凭证
-      const newSettings = {
-        ANTHROPIC_AUTH_TOKEN: apiKey,
-        ANTHROPIC_BASE_URL: apiUrl
-      };
+      // 读取当前 profile 或使用主配置模板
+      let currentProfile = readProfile(profile);
+      if (!currentProfile || !currentProfile.env) {
+        // 如果是旧格式或空配置，基于主配置模板创建
+        const template = getClaudeSettingsTemplate() || {};
+        currentProfile = { ...template };
+      }
+
+      // 确保 env 对象存在
+      if (!currentProfile.env) {
+        currentProfile.env = {};
+      }
+
+      // 更新 env 中的 API 凭证
+      currentProfile.env.ANTHROPIC_AUTH_TOKEN = apiKey;
+      currentProfile.env.ANTHROPIC_BASE_URL = apiUrl;
 
       // 如果重命名
       if (newName && newName !== profile) {
@@ -88,7 +102,7 @@ export function editCommand(program) {
           console.log(chalk.red(`Profile "${newName}" 已存在`));
           process.exit(1);
         }
-        saveProfile(newName, newSettings);
+        saveProfile(newName, currentProfile);
         deleteProfile(profile);
 
         // 更新默认 profile
@@ -98,7 +112,7 @@ export function editCommand(program) {
 
         console.log(chalk.green(`\n✓ Profile 已重命名为 "${newName}" 并保存`));
       } else {
-        saveProfile(profile, newSettings);
+        saveProfile(profile, currentProfile);
         console.log(chalk.green(`\n✓ Profile "${profile}" 已更新`));
       }
     });

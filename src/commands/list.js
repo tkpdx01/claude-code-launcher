@@ -1,7 +1,6 @@
-import fs from 'fs';
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { getProfiles, getDefaultProfile, getProfilePath } from '../profiles.js';
+import { getProfiles, getDefaultProfile, getProfileCredentials } from '../profiles.js';
 
 export function listCommand(program) {
   program
@@ -31,19 +30,8 @@ export function listCommand(program) {
 
       profiles.forEach((p, index) => {
         const isDefault = p === defaultProfile;
-        const profilePath = getProfilePath(p);
-        let baseUrl = chalk.gray('(未设置)');
-
-        try {
-          const content = fs.readFileSync(profilePath, 'utf-8');
-          // 用正则从 JSON 文件内容中提取 ANTHROPIC_BASE_URL（新格式直接在顶层）
-          const match = content.match(/"ANTHROPIC_BASE_URL"\s*:\s*"([^"]+)"/);
-          if (match && match[1]) {
-            baseUrl = match[1];
-          }
-        } catch {
-          baseUrl = chalk.red('(读取失败)');
-        }
+        const { apiUrl } = getProfileCredentials(p);
+        const baseUrl = apiUrl || chalk.gray('(未设置)');
 
         const num = isDefault ? chalk.green(`${index + 1}`) : chalk.gray(`${index + 1}`);
         const name = isDefault ? chalk.green(`${p} *`) : p;
