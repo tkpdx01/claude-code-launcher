@@ -14,7 +14,6 @@ import {
   showCommand,
   importCommand,
   newCommand,
-  syncCommand,
   editCommand,
   deleteCommand,
   helpCommand
@@ -26,7 +25,7 @@ const program = new Command();
 program
   .name('ccc')
   .description('Claude Code Settings Launcher - 管理多个 Claude Code 配置文件')
-  .version('0.2.0');
+  .version('1.2.6');
 
 // 注册所有命令
 listCommand(program);
@@ -34,7 +33,6 @@ useCommand(program);
 showCommand(program);
 importCommand(program);
 newCommand(program);
-syncCommand(program);
 editCommand(program);
 deleteCommand(program);
 helpCommand(program);
@@ -49,7 +47,7 @@ program
 
     if (profile) {
       // 检查是否是子命令
-      if (['list', 'ls', 'use', 'show', 'import', 'if', 'new', 'sync', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
+      if (['list', 'ls', 'use', 'show', 'import', 'if', 'new', 'edit', 'delete', 'rm', 'help'].includes(profile)) {
         return; // 让子命令处理
       }
 

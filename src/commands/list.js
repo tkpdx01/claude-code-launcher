@@ -36,7 +36,7 @@ export function listCommand(program) {
 
         try {
           const content = fs.readFileSync(profilePath, 'utf-8');
-          // 用正则从 JSON 文件内容中提取 ANTHROPIC_BASE_URL
+          // 用正则从 JSON 文件内容中提取 ANTHROPIC_BASE_URL（新格式直接在顶层）
           const match = content.match(/"ANTHROPIC_BASE_URL"\s*:\s*"([^"]+)"/);
           if (match && match[1]) {
             baseUrl = match[1];

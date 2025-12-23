@@ -4,13 +4,12 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import readline from 'readline';
 import Table from 'cli-table3';
-import { 
-  ensureDirs, 
-  getProfiles, 
-  getProfilePath, 
-  setDefaultProfile, 
-  profileExists,
-  getClaudeSettingsTemplate 
+import {
+  ensureDirs,
+  getProfiles,
+  getProfilePath,
+  setDefaultProfile,
+  profileExists
 } from '../profiles.js';
 import { parseCCSwitchSQL, parseAllApiHubJSON, detectFileFormat } from '../parsers.js';
 import { extractFromText, getDomainName, sanitizeProfileName, convertToClaudeSettings } from '../utils.js';
@@ -61,9 +60,6 @@ export function importCommand(program) {
         process.exit(1);
       }
 
-      // 获取模板
-      const template = getClaudeSettingsTemplate();
-
       let providers = [];
       let formatName = '';
 
@@ -82,11 +78,6 @@ export function importCommand(program) {
 
       console.log(chalk.green(`✓ 识别到 ${formatName} 格式`));
       console.log(chalk.green(`✓ 找到 ${providers.length} 个配置\n`));
-
-      // 显示模板状态
-      if (template) {
-        console.log(chalk.gray('将使用 ~/.claude/settings.json 作为模板合并设置\n'));
-      }
 
       // 显示找到的配置
       const table = new Table({
@@ -200,8 +191,8 @@ export function importCommand(program) {
           }
         }
 
-        // 转换并保存配置
-        const settings = convertToClaudeSettings(provider, template);
+        // 转换并保存配置（影子配置只包含 API 凭证）
+        const settings = convertToClaudeSettings(provider);
         fs.writeFileSync(profilePath, JSON.stringify(settings, null, 2));
         console.log(chalk.green(`✓ ${profileName}`));
         imported++;
@@ -327,10 +318,10 @@ export async function interactiveImport() {
   const finalApiUrl = apiUrl || 'https://api.anthropic.com';
   const finalApiKey = apiKey || tokens[0] || '';
 
-  // 创建 settings.json
+  // 影子配置只存储 API 凭证
   const settings = {
-    apiUrl: finalApiUrl,
-    apiKey: finalApiKey
+    ANTHROPIC_AUTH_TOKEN: finalApiKey,
+    ANTHROPIC_BASE_URL: finalApiUrl
   };
 
   ensureDirs();

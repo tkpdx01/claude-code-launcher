@@ -51,7 +51,7 @@ export function showCommand(program) {
       // 格式化显示配置
       Object.entries(settings).forEach(([key, value]) => {
         const formattedValue = formatValue(key, value);
-        if (key === 'apiKey' && value) {
+        if ((key === 'apiKey' || key === 'ANTHROPIC_AUTH_TOKEN') && value) {
           console.log(`  ${chalk.cyan(key)}: ${chalk.yellow(formattedValue)}`);
         } else if (typeof value === 'boolean') {
           console.log(`  ${chalk.cyan(key)}: ${value ? chalk.green(formattedValue) : chalk.red(formattedValue)}`);

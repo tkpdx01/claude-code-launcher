@@ -35,9 +35,8 @@ export function sanitizeProfileName(name) {
     .substring(0, 50);              // 限制长度
 }
 
-// 将导入的配置转换为 Claude Code settings 格式
+// 将导入的配置转换为影子配置格式（只包含 API 凭证）
 export function convertToClaudeSettings(provider, template) {
-  const baseSettings = template || {};
   const config = provider.settingsConfig || {};
 
   // 从 env 中提取 API 信息
@@ -45,30 +44,16 @@ export function convertToClaudeSettings(provider, template) {
   const apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || config.apiKey || '';
   const apiUrl = env.ANTHROPIC_BASE_URL || config.apiUrl || provider.websiteUrl || '';
 
-  // 提取 model 设置
-  const model = config.model || '';
-
-  // 只保留模板设置，替换 env 中的 API 信息
-  const settings = {
-    ...baseSettings,
-    env: {
-      ...baseSettings.env,
-      ANTHROPIC_AUTH_TOKEN: apiKey,
-      ANTHROPIC_BASE_URL: apiUrl
-    }
+  // 影子配置只存储 API 凭证，不用 env 包裹
+  return {
+    ANTHROPIC_AUTH_TOKEN: apiKey,
+    ANTHROPIC_BASE_URL: apiUrl
   };
-
-  // 如果有 model 设置，添加到配置中
-  if (model) {
-    settings.model = model;
-  }
-
-  return settings;
 }
 
 // 格式化显示配置值
 export function formatValue(key, value) {
-  if (key === 'apiKey' && value) {
+  if ((key === 'apiKey' || key === 'ANTHROPIC_AUTH_TOKEN') && value) {
     return value.substring(0, 15) + '...';
   }
   if (typeof value === 'boolean') {

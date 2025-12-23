@@ -15,18 +15,16 @@ export function showHelp() {
   console.log(chalk.gray('    ccc list, ls           ') + '列出所有配置（带序号，按 a-z 排序）');
   console.log(chalk.gray('    ccc show [profile]     ') + '显示完整配置');
   console.log(chalk.gray('    ccc use <profile>      ') + '设置默认配置');
-  console.log(chalk.gray('    ccc new [name]         ') + '基于模板创建新配置');
+  console.log(chalk.gray('    ccc new [name]         ') + '创建新的影子配置');
   console.log(chalk.gray('    ccc import <file>      ') + '从文件导入（自动识别格式）');
-  console.log(chalk.gray('    ccc sync [profile]     ') + '同步模板设置（保留 API 配置）');
-  console.log(chalk.gray('    ccc sync -a, --all     ') + '同步所有配置');
   console.log(chalk.gray('    ccc edit [profile]     ') + '编辑配置');
   console.log(chalk.gray('    ccc delete, rm [name]  ') + '删除配置');
   console.log(chalk.gray('    ccc help               ') + '显示此帮助信息');
   console.log();
 
   console.log(chalk.yellow('  配置存储:'));
-  console.log(chalk.gray('    ~/.ccc/profiles/       ') + '配置文件目录');
-  console.log(chalk.gray('    ~/.claude/settings.json') + '模板来源（用于 ccc new）');
+  console.log(chalk.gray('    ~/.ccc/profiles/       ') + '影子配置文件目录');
+  console.log(chalk.gray('    影子配置只存储         ') + 'ANTHROPIC_AUTH_TOKEN 和 ANTHROPIC_BASE_URL');
   console.log();
 
   console.log(chalk.yellow('  支持的导入格式:'));

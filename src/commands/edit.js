@@ -50,22 +50,22 @@ export function editCommand(program) {
       const currentSettings = readProfile(profile);
 
       console.log(chalk.cyan(`\n当前配置 (${profile}):`));
-      console.log(chalk.gray(`  API URL: ${currentSettings.apiUrl || '未设置'}`));
-      console.log(chalk.gray(`  API Key: ${currentSettings.apiKey ? currentSettings.apiKey.substring(0, 10) + '...' : '未设置'}`));
+      console.log(chalk.gray(`  ANTHROPIC_BASE_URL: ${currentSettings.ANTHROPIC_BASE_URL || '未设置'}`));
+      console.log(chalk.gray(`  ANTHROPIC_AUTH_TOKEN: ${currentSettings.ANTHROPIC_AUTH_TOKEN ? currentSettings.ANTHROPIC_AUTH_TOKEN.substring(0, 10) + '...' : '未设置'}`));
       console.log();
 
       const { apiUrl, apiKey, newName } = await inquirer.prompt([
         {
           type: 'input',
           name: 'apiUrl',
-          message: 'API URL:',
-          default: currentSettings.apiUrl || ''
+          message: 'ANTHROPIC_BASE_URL:',
+          default: currentSettings.ANTHROPIC_BASE_URL || ''
         },
         {
           type: 'input',
           name: 'apiKey',
-          message: 'API Key:',
-          default: currentSettings.apiKey || ''
+          message: 'ANTHROPIC_AUTH_TOKEN:',
+          default: currentSettings.ANTHROPIC_AUTH_TOKEN || ''
         },
         {
           type: 'input',
@@ -75,10 +75,10 @@ export function editCommand(program) {
         }
       ]);
 
+      // 影子配置只存储 API 凭证
       const newSettings = {
-        ...currentSettings,
-        apiUrl,
-        apiKey
+        ANTHROPIC_AUTH_TOKEN: apiKey,
+        ANTHROPIC_BASE_URL: apiUrl
       };
 
       // 如果重命名
