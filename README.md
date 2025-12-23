@@ -52,6 +52,21 @@ ccc delete [profile]   # Delete profile / 删除配置
 - **Smart Import / 智能导入**: Auto-detect API URL and token
 - **Sync Settings / 同步**: Update from template, preserve credentials
 
+## Sync Command / 同步命令
+
+The `sync` command updates profiles with the latest settings from `~/.claude/settings.json` while preserving each profile's API credentials (`ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL`).
+
+`sync` 命令从 `~/.claude/settings.json` 同步最新设置到 profiles，同时保留每个 profile 的 API 凭证（`ANTHROPIC_AUTH_TOKEN` 和 `ANTHROPIC_BASE_URL`）。
+
+```bash
+ccc sync [profile]     # Sync single profile / 同步单个配置
+ccc sync --all         # Sync all profiles / 同步所有配置
+```
+
+Use this when you've updated your main Claude settings (plugins, model, etc.) and want to apply those changes to all profiles.
+
+当你更新了主 Claude 设置（插件、模型等）并想将这些更改应用到所有 profiles 时使用此命令。
+
 ## Storage / 存储
 
 - Profiles: `~/.ccc/profiles/*.json`
