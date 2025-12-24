@@ -6,5 +6,6 @@ export { newCommand } from './new.js';
 export { editCommand } from './edit.js';
 export { deleteCommand } from './delete.js';
 export { syncCommand } from './sync.js';
+export { webdavCommand } from './webdav.js';
 export { helpCommand, showHelp } from './help.js';
 
