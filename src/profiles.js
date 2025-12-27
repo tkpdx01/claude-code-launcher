@@ -86,6 +86,29 @@ export function getClaudeSettingsTemplate() {
   return null;
 }
 
+// 确保主配置中有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
+// 如果没有则添加，并返回更新后的模板
+export function ensureDisableNonessentialTraffic() {
+  const template = getClaudeSettingsTemplate();
+  if (!template) {
+    return null;
+  }
+
+  // 确保 env 对象存在
+  if (!template.env) {
+    template.env = {};
+  }
+
+  // 检查是否已有该设置
+  if (template.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC !== '1') {
+    template.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+    // 保存回主配置
+    fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(template, null, 2));
+  }
+
+  return template;
+}
+
 // 读取 profile 配置
 export function readProfile(name) {
   const profilePath = getProfilePath(name);
@@ -108,6 +131,9 @@ export function saveProfile(name, settings) {
 
 // 创建基于主配置的 profile（复制 ~/.claude/settings.json 并设置 env）
 export function createProfileFromTemplate(name, apiUrl, apiKey) {
+  // 先确保主配置有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
+  ensureDisableNonessentialTraffic();
+
   const template = getClaudeSettingsTemplate() || {};
 
   // 确保 env 对象存在
@@ -125,6 +151,9 @@ export function createProfileFromTemplate(name, apiUrl, apiKey) {
 
 // 同步主配置到 profile（保留 profile 的 API 凭证）
 export function syncProfileWithTemplate(name) {
+  // 先确保主配置有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
+  ensureDisableNonessentialTraffic();
+
   const template = getClaudeSettingsTemplate();
   if (!template) {
     return null;

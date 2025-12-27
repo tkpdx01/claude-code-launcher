@@ -12,7 +12,8 @@ import {
   deleteProfile,
   resolveProfile,
   getProfileCredentials,
-  getClaudeSettingsTemplate
+  getClaudeSettingsTemplate,
+  ensureDisableNonessentialTraffic
 } from '../profiles.js';
 
 export function editCommand(program) {
@@ -94,6 +95,14 @@ export function editCommand(program) {
       // 更新 env 中的 API 凭证
       currentProfile.env.ANTHROPIC_AUTH_TOKEN = apiKey;
       currentProfile.env.ANTHROPIC_BASE_URL = apiUrl;
+
+      // 确保主配置有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
+      ensureDisableNonessentialTraffic();
+
+      // 确保影子配置也有该设置
+      if (currentProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC !== '1') {
+        currentProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+      }
 
       // 如果重命名
       if (newName && newName !== profile) {
