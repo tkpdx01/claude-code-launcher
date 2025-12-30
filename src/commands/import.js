@@ -9,10 +9,11 @@ import {
   getProfiles,
   getProfilePath,
   setDefaultProfile,
-  profileExists
+  profileExists,
+  createProfileFromTemplate
 } from '../profiles.js';
 import { parseCCSwitchSQL, parseAllApiHubJSON, detectFileFormat } from '../parsers.js';
-import { extractFromText, getDomainName, sanitizeProfileName, convertToClaudeSettings } from '../utils.js';
+import { extractFromText, getDomainName, sanitizeProfileName } from '../utils.js';
 
 // 生成唯一的 profile 名称（如果重复则加后缀 token2, token3...）
 function getUniqueProfileName(baseName, usedNames) {
@@ -191,9 +192,14 @@ export function importCommand(program) {
           }
         }
 
-        // 转换并保存配置（影子配置只包含 API 凭证）
-        const settings = convertToClaudeSettings(provider);
-        fs.writeFileSync(profilePath, JSON.stringify(settings, null, 2));
+        // 从 provider 中提取 API 凭证
+        const config = provider.settingsConfig || {};
+        const env = config.env || {};
+        const apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || config.apiKey || '';
+        const apiUrl = env.ANTHROPIC_BASE_URL || config.apiUrl || provider.websiteUrl || '';
+
+        // 使用主配置模板创建完整的 profile（确保有 env 对象）
+        createProfileFromTemplate(profileName, apiUrl, apiKey);
         console.log(chalk.green(`✓ ${profileName}`));
         imported++;
       }
@@ -318,12 +324,6 @@ export async function interactiveImport() {
   const finalApiUrl = apiUrl || 'https://api.anthropic.com';
   const finalApiKey = apiKey || tokens[0] || '';
 
-  // 影子配置只存储 API 凭证
-  const settings = {
-    ANTHROPIC_AUTH_TOKEN: finalApiKey,
-    ANTHROPIC_BASE_URL: finalApiUrl
-  };
-
   ensureDirs();
   const profilePath = getProfilePath(profileName);
 
@@ -343,7 +343,8 @@ export async function interactiveImport() {
     }
   }
 
-  fs.writeFileSync(profilePath, JSON.stringify(settings, null, 2));
+  // 使用主配置模板创建完整的 profile（确保有 env 对象）
+  createProfileFromTemplate(profileName, finalApiUrl, finalApiKey);
   console.log(chalk.green(`\n✓ Profile "${profileName}" 已保存到 ${profilePath}`));
 
   // 如果是第一个 profile，设为默认
