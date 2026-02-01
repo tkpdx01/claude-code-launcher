@@ -2,6 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG_DIR, PROFILES_DIR, DEFAULT_FILE, CLAUDE_SETTINGS_PATH } from './config.js';
 
+function stringifyClaudeSettings(settings) {
+  // Claude Code 默认 settings.json 使用 2 空格缩进，并以换行结尾（便于 diff/兼容各平台编辑器）
+  return `${JSON.stringify(settings, null, 2)}\n`;
+}
+
 // 确保目录存在
 export function ensureDirs() {
   if (!fs.existsSync(CONFIG_DIR)) {
@@ -86,27 +91,51 @@ export function getClaudeSettingsTemplate() {
   return null;
 }
 
-// 确保主配置中有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
-// 如果没有则添加，并返回更新后的模板
-export function ensureDisableNonessentialTraffic() {
+function ensureClaudeEnvSettings(envUpdates) {
   const template = getClaudeSettingsTemplate();
   if (!template) {
     return null;
   }
 
   // 确保 env 对象存在
-  if (!template.env) {
+  if (!template.env || typeof template.env !== 'object' || Array.isArray(template.env)) {
     template.env = {};
   }
 
-  // 检查是否已有该设置
-  if (template.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC !== '1') {
-    template.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  let changed = false;
+  for (const [key, value] of Object.entries(envUpdates)) {
+    if (template.env[key] !== value) {
+      template.env[key] = value;
+      changed = true;
+    }
+  }
+
+  if (changed) {
     // 保存回主配置
-    fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(template, null, 2));
+    fs.writeFileSync(CLAUDE_SETTINGS_PATH, stringifyClaudeSettings(template));
   }
 
   return template;
+}
+
+// 确保主配置中有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
+// 如果没有则添加，并返回更新后的模板
+export function ensureDisableNonessentialTraffic() {
+  return ensureClaudeEnvSettings({ CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' });
+}
+
+// 确保主配置中禁用 Attribution Header（Claude Code env 变量）
+export function ensureDisableAttributionHeader() {
+  return ensureClaudeEnvSettings({ CLAUDE_CODE_ATTRIBUTION_HEADER: '0' });
+}
+
+// 一次性确保主配置包含本工具需要的 env 设置
+export function ensureRequiredClaudeEnvSettings() {
+  return ensureClaudeEnvSettings({
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+    DISABLE_INSTALLATION_CHECKS: '1'
+  });
 }
 
 // 读取 profile 配置
@@ -126,20 +155,24 @@ export function readProfile(name) {
 export function saveProfile(name, settings) {
   ensureDirs();
   const profilePath = getProfilePath(name);
-  fs.writeFileSync(profilePath, JSON.stringify(settings, null, 2));
+  fs.writeFileSync(profilePath, stringifyClaudeSettings(settings));
 }
 
 // 创建基于主配置的 profile（复制 ~/.claude/settings.json 并设置 env）
 export function createProfileFromTemplate(name, apiUrl, apiKey) {
-  // 先确保主配置有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
-  ensureDisableNonessentialTraffic();
-
-  const template = getClaudeSettingsTemplate() || {};
+  // 先确保主配置包含必要 env 设置（也会写回 ~/.claude/settings.json）
+  const ensuredTemplate = ensureRequiredClaudeEnvSettings();
+  const template = ensuredTemplate || getClaudeSettingsTemplate() || {};
 
   // 确保 env 对象存在
   if (!template.env) {
     template.env = {};
   }
+
+  // 确保 profile 也包含相同设置
+  template.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  template.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
+  template.env.DISABLE_INSTALLATION_CHECKS = '1';
 
   // 只设置 API 凭证到 env
   template.env.ANTHROPIC_AUTH_TOKEN = apiKey;
@@ -151,10 +184,8 @@ export function createProfileFromTemplate(name, apiUrl, apiKey) {
 
 // 同步主配置到 profile（保留 profile 的 API 凭证）
 export function syncProfileWithTemplate(name) {
-  // 先确保主配置有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
-  ensureDisableNonessentialTraffic();
-
-  const template = getClaudeSettingsTemplate();
+  // 先确保主配置包含必要 env 设置（也会写回 ~/.claude/settings.json）
+  const template = ensureRequiredClaudeEnvSettings() || getClaudeSettingsTemplate();
   if (!template) {
     return null;
   }
@@ -174,6 +205,11 @@ export function syncProfileWithTemplate(name) {
 
   // 确保 env 对象存在并保留 API 凭证
   newProfile.env = { ...(template.env || {}), ANTHROPIC_AUTH_TOKEN: apiKey, ANTHROPIC_BASE_URL: apiUrl };
+
+  // 确保 profile 也包含相同设置
+  newProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  newProfile.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
+  newProfile.env.DISABLE_INSTALLATION_CHECKS = '1';
 
   saveProfile(name, newProfile);
   return newProfile;
@@ -208,4 +244,3 @@ export function clearDefaultProfile() {
     fs.unlinkSync(DEFAULT_FILE);
   }
 }
-

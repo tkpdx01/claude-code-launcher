@@ -13,7 +13,7 @@ import {
   resolveProfile,
   getProfileCredentials,
   getClaudeSettingsTemplate,
-  ensureDisableNonessentialTraffic
+  ensureRequiredClaudeEnvSettings
 } from '../profiles.js';
 
 export function editCommand(program) {
@@ -96,13 +96,11 @@ export function editCommand(program) {
       currentProfile.env.ANTHROPIC_AUTH_TOKEN = apiKey;
       currentProfile.env.ANTHROPIC_BASE_URL = apiUrl;
 
-      // 确保主配置有 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC 设置
-      ensureDisableNonessentialTraffic();
-
-      // 确保影子配置也有该设置
-      if (currentProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC !== '1') {
-        currentProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
-      }
+      // 确保主配置（~/.claude/settings.json）与 profile 都包含必要 env 设置
+      ensureRequiredClaudeEnvSettings();
+      currentProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+      currentProfile.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
+      currentProfile.env.DISABLE_INSTALLATION_CHECKS = '1';
 
       // 如果重命名
       if (newName && newName !== profile) {
@@ -126,4 +124,3 @@ export function editCommand(program) {
       }
     });
 }
-

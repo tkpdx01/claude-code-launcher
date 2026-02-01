@@ -60,6 +60,7 @@ ccc webdav status      # View sync status / 查看同步状态
 - **Template Support / 模板**: Based on `~/.claude/settings.json`
 - **Smart Import / 智能导入**: Auto-detect API URL and token
 - **Sync Settings / 同步**: Update from template, preserve credentials
+- **Claude Env Defaults / Claude 环境变量默认值**: Auto-ensure `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, and `DISABLE_INSTALLATION_CHECKS=1` in both template and profiles
 - **WebDAV Cloud Sync / 云同步**: Encrypted sync across devices
 
 ## Sync Command / 同步命令
