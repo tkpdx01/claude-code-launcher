@@ -14,7 +14,8 @@ import {
   getProfileCredentials,
   getClaudeSettingsTemplate,
   ensureRequiredClaudeEnvSettings,
-  ensureClaudeSettingsExtras
+  ensureClaudeSettingsExtras,
+  applyClaudeSettingsExtras
 } from '../profiles.js';
 
 export function editCommand(program) {
@@ -103,6 +104,7 @@ export function editCommand(program) {
       currentProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
       currentProfile.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
       currentProfile.env.DISABLE_INSTALLATION_CHECKS = '1';
+      applyClaudeSettingsExtras(currentProfile);
 
       // 如果重命名
       if (newName && newName !== profile) {

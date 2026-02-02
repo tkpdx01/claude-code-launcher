@@ -150,30 +150,28 @@ function getCclineCommand() {
   }
 }
 
-// 确保主配置包含 attribution/includeCoAuthoredBy 和 statusLine 设置
-export function ensureClaudeSettingsExtras() {
-  const template = getClaudeSettingsTemplate();
-  if (!template) {
-    return null;
+export function applyClaudeSettingsExtras(target) {
+  if (!target || typeof target !== 'object') {
+    return false;
   }
 
   let changed = false;
 
   // 确保 attribution 禁用（commit/pr 为空字符串）
-  if (!template.attribution || typeof template.attribution !== 'object' || Array.isArray(template.attribution)) {
-    template.attribution = { commit: '', pr: '' };
+  if (!target.attribution || typeof target.attribution !== 'object' || Array.isArray(target.attribution)) {
+    target.attribution = { commit: '', pr: '' };
     changed = true;
   } else {
-    if (template.attribution.commit !== '' || template.attribution.pr !== '') {
-      template.attribution.commit = '';
-      template.attribution.pr = '';
+    if (target.attribution.commit !== '' || target.attribution.pr !== '') {
+      target.attribution.commit = '';
+      target.attribution.pr = '';
       changed = true;
     }
   }
 
   // 兼容旧版本：确保 includeCoAuthoredBy: false
-  if (template.includeCoAuthoredBy !== false) {
-    template.includeCoAuthoredBy = false;
+  if (target.includeCoAuthoredBy !== false) {
+    target.includeCoAuthoredBy = false;
     changed = true;
   }
 
@@ -185,13 +183,25 @@ export function ensureClaudeSettingsExtras() {
     padding: 0
   };
 
-  if (!template.statusLine ||
-      template.statusLine.type !== 'command' ||
-      template.statusLine.command !== expectedCommand ||
-      template.statusLine.padding !== 0) {
-    template.statusLine = expectedStatusLine;
+  if (!target.statusLine ||
+      target.statusLine.type !== 'command' ||
+      target.statusLine.command !== expectedCommand ||
+      target.statusLine.padding !== 0) {
+    target.statusLine = expectedStatusLine;
     changed = true;
   }
+
+  return changed;
+}
+
+// 确保主配置包含 attribution/includeCoAuthoredBy 和 statusLine 设置
+export function ensureClaudeSettingsExtras() {
+  const template = getClaudeSettingsTemplate();
+  if (!template) {
+    return null;
+  }
+
+  const changed = applyClaudeSettingsExtras(template);
 
   if (changed) {
     fs.writeFileSync(CLAUDE_SETTINGS_PATH, stringifyClaudeSettings(template));
@@ -225,6 +235,7 @@ export function createProfileFromTemplate(name, apiUrl, apiKey) {
   // 先确保主配置包含必要 env 设置（也会写回 ~/.claude/settings.json）
   const ensuredTemplate = ensureRequiredClaudeEnvSettings();
   const template = ensuredTemplate || getClaudeSettingsTemplate() || {};
+  applyClaudeSettingsExtras(template);
 
   // 确保 env 对象存在
   if (!template.env) {
@@ -251,6 +262,7 @@ export function syncProfileWithTemplate(name) {
   if (!template) {
     return null;
   }
+  applyClaudeSettingsExtras(template);
 
   const currentProfile = readProfile(name);
   if (!currentProfile) {
@@ -272,6 +284,7 @@ export function syncProfileWithTemplate(name) {
   newProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
   newProfile.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
   newProfile.env.DISABLE_INSTALLATION_CHECKS = '1';
+  applyClaudeSettingsExtras(newProfile);
 
   saveProfile(name, newProfile);
   return newProfile;
