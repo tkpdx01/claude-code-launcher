@@ -10,6 +10,37 @@ import {
 } from '../profiles.js';
 import { launchClaude } from '../launch.js';
 
+const RESERVED_PROFILE_NAMES = [
+  'list',
+  'ls',
+  'use',
+  'show',
+  'import',
+  'if',
+  'new',
+  'edit',
+  'delete',
+  'rm',
+  'sync',
+  'webdav',
+  'help'
+];
+
+function isReservedProfileName(name) {
+  return RESERVED_PROFILE_NAMES.includes(name);
+}
+
+function validateProfileName(input) {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return '请输入配置名称';
+  }
+  if (isReservedProfileName(trimmed)) {
+    return '配置名称不能使用命令关键词';
+  }
+  return true;
+}
+
 export function newCommand(program) {
   program
     .command('new [name]')
@@ -22,10 +53,16 @@ export function newCommand(program) {
             type: 'input',
             name: 'profileName',
             message: '配置名称:',
-            validate: (input) => input.trim() ? true : '请输入配置名称'
+            validate: validateProfileName
           }
         ]);
         name = profileName;
+      } else {
+        const validationResult = validateProfileName(name);
+        if (validationResult !== true) {
+          console.log(chalk.red(validationResult));
+          process.exit(1);
+        }
       }
 
       // 检查是否已存在
@@ -61,7 +98,8 @@ export function newCommand(program) {
           type: 'input',
           name: 'finalName',
           message: 'Profile 名称:',
-          default: name
+          default: name,
+          validate: validateProfileName
         }
       ]);
 
