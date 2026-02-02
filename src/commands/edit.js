@@ -13,7 +13,8 @@ import {
   resolveProfile,
   getProfileCredentials,
   getClaudeSettingsTemplate,
-  ensureRequiredClaudeEnvSettings
+  ensureRequiredClaudeEnvSettings,
+  ensureClaudeSettingsExtras
 } from '../profiles.js';
 
 export function editCommand(program) {
@@ -98,6 +99,7 @@ export function editCommand(program) {
 
       // 确保主配置（~/.claude/settings.json）与 profile 都包含必要 env 设置
       ensureRequiredClaudeEnvSettings();
+      ensureClaudeSettingsExtras();
       currentProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
       currentProfile.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
       currentProfile.env.DISABLE_INSTALLATION_CHECKS = '1';

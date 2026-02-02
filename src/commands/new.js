@@ -5,7 +5,8 @@ import {
   getProfiles,
   profileExists,
   createProfileFromTemplate,
-  setDefaultProfile
+  setDefaultProfile,
+  ensureClaudeSettingsExtras
 } from '../profiles.js';
 import { launchClaude } from '../launch.js';
 
@@ -81,6 +82,7 @@ export function newCommand(program) {
       }
 
       ensureDirs();
+      ensureClaudeSettingsExtras();
       createProfileFromTemplate(finalName, apiUrl, apiKey);
       console.log(chalk.green(`\n✓ 配置 "${finalName}" 已创建（基于 ~/.claude/settings.json）`));
 

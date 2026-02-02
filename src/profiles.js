@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { CONFIG_DIR, PROFILES_DIR, DEFAULT_FILE, CLAUDE_SETTINGS_PATH } from './config.js';
 
 function stringifyClaudeSettings(settings) {
@@ -136,6 +137,67 @@ export function ensureRequiredClaudeEnvSettings() {
     CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
     DISABLE_INSTALLATION_CHECKS: '1'
   });
+}
+
+// 获取 statusLine 的 ccline 路径（适配不同操作系统）
+function getCclineCommand() {
+  const platform = os.platform();
+  if (platform === 'win32') {
+    return '%USERPROFILE%\\.claude\\ccline\\ccline.exe';
+  } else {
+    // Linux 和 macOS
+    return '~/.claude/ccline/ccline';
+  }
+}
+
+// 确保主配置包含 attribution/includeCoAuthoredBy 和 statusLine 设置
+export function ensureClaudeSettingsExtras() {
+  const template = getClaudeSettingsTemplate();
+  if (!template) {
+    return null;
+  }
+
+  let changed = false;
+
+  // 确保 attribution 禁用（commit/pr 为空字符串）
+  if (!template.attribution || typeof template.attribution !== 'object' || Array.isArray(template.attribution)) {
+    template.attribution = { commit: '', pr: '' };
+    changed = true;
+  } else {
+    if (template.attribution.commit !== '' || template.attribution.pr !== '') {
+      template.attribution.commit = '';
+      template.attribution.pr = '';
+      changed = true;
+    }
+  }
+
+  // 兼容旧版本：确保 includeCoAuthoredBy: false
+  if (template.includeCoAuthoredBy !== false) {
+    template.includeCoAuthoredBy = false;
+    changed = true;
+  }
+
+  // 确保 statusLine 配置
+  const expectedCommand = getCclineCommand();
+  const expectedStatusLine = {
+    type: 'command',
+    command: expectedCommand,
+    padding: 0
+  };
+
+  if (!template.statusLine ||
+      template.statusLine.type !== 'command' ||
+      template.statusLine.command !== expectedCommand ||
+      template.statusLine.padding !== 0) {
+    template.statusLine = expectedStatusLine;
+    changed = true;
+  }
+
+  if (changed) {
+    fs.writeFileSync(CLAUDE_SETTINGS_PATH, stringifyClaudeSettings(template));
+  }
+
+  return template;
 }
 
 // 读取 profile 配置
