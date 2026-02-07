@@ -4,15 +4,6 @@ Claude Code Settings Launcher - Launch Claude Code with different settings profi
 
 Claude Code 设置启动器 - 使用不同的 settings profile 文件启动 Claude Code，可同时运行多个使用不同 API 配置的 Claude 实例。
 
-## Compatibility / 兼容性
-
-Tested export file versions / 已测试的导出文件版本：
-
-| Tool | Version | Export Format |
-|------|---------|---------------|
-| [cc-switch](https://github.com/farion1231/cc-switch) | 3.8.2 | SQL |
-| [All API Hub](https://github.com/qixing-jk/all-api-hub) | v2.26.1 | JSON |
-
 ## Installation / 安装
 
 ```bash
@@ -38,7 +29,6 @@ ccc list -v            # List with URLs / 显示 API URLs
 ccc show [profile]     # Show config / 显示完整配置
 ccc use <profile>      # Set default / 设置默认
 ccc new [name]         # Create from template / 从模板创建
-ccc import             # Import from cc-switch SQL or All API Hub JSON / 导入 cc-switch SQL 或 All API Hub JSON
 ccc sync [profile]     # Sync from template / 从模板同步
 ccc sync -a            # Sync all / 同步所有
 ccc edit [profile]     # Edit profile / 编辑配置
@@ -58,9 +48,8 @@ ccc webdav status      # View sync status / 查看同步状态
 
 - **Multiple Profiles / 多配置**: Manage different API configurations
 - **Template Support / 模板**: Based on `~/.claude/settings.json`
-- **Smart Import / 智能导入**: Auto-detect API URL and token
 - **Sync Settings / 同步**: Update from template, preserve credentials
-- **Claude Env Defaults / Claude 环境变量默认值**: Auto-ensure these values in the `env` section of both `~/.claude/settings.json` and each profile: `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, `DISABLE_INSTALLATION_CHECKS=1`
+- **Claude Env Defaults / Claude 环境变量默认值**: Auto-ensure these values in the `env` section of both `~/.claude/settings.json` and each profile: `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, `DISABLE_INSTALLATION_CHECKS=1`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
 - **WebDAV Cloud Sync / 云同步**: Encrypted sync across devices
 
 ## Sync Command / 同步命令

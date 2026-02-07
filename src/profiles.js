@@ -135,7 +135,8 @@ export function ensureRequiredClaudeEnvSettings() {
   return ensureClaudeEnvSettings({
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
-    DISABLE_INSTALLATION_CHECKS: '1'
+    DISABLE_INSTALLATION_CHECKS: '1',
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1'
   });
 }
 
@@ -156,6 +157,12 @@ export function applyClaudeSettingsExtras(target) {
   }
 
   let changed = false;
+
+  // 确保 hasCompletedOnboarding 为 true
+  if (target.hasCompletedOnboarding !== true) {
+    target.hasCompletedOnboarding = true;
+    changed = true;
+  }
 
   // 确保 attribution 禁用（commit/pr 为空字符串）
   if (!target.attribution || typeof target.attribution !== 'object' || Array.isArray(target.attribution)) {
@@ -246,6 +253,7 @@ export function createProfileFromTemplate(name, apiUrl, apiKey) {
   template.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
   template.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
   template.env.DISABLE_INSTALLATION_CHECKS = '1';
+  template.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
 
   // 只设置 API 凭证到 env
   template.env.ANTHROPIC_AUTH_TOKEN = apiKey;
@@ -284,6 +292,7 @@ export function syncProfileWithTemplate(name) {
   newProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
   newProfile.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
   newProfile.env.DISABLE_INSTALLATION_CHECKS = '1';
+  newProfile.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
   applyClaudeSettingsExtras(newProfile);
 
   saveProfile(name, newProfile);

@@ -16,7 +16,6 @@ export function showHelp() {
   console.log(chalk.gray('    ccc show [profile]     ') + '显示完整配置');
   console.log(chalk.gray('    ccc use <profile>      ') + '设置默认配置');
   console.log(chalk.gray('    ccc new [name]         ') + '创建新的影子配置');
-  console.log(chalk.gray('    ccc import <file>      ') + '从文件导入（自动识别格式）');
   console.log(chalk.gray('    ccc sync [profile]     ') + '从模板同步配置（保留 API 凭证）');
   console.log(chalk.gray('    ccc sync --all         ') + '同步所有配置');
   console.log(chalk.gray('    ccc edit [profile]     ') + '编辑配置');
@@ -37,17 +36,11 @@ export function showHelp() {
   console.log(chalk.gray('    ~/.ccc/.sync_key       ') + '本地密码缓存（机器指纹加密）');
   console.log();
 
-  console.log(chalk.yellow('  支持的导入格式:'));
-  console.log(chalk.gray('    CC-Switch SQL          ') + '自动识别 INSERT INTO providers 语句');
-  console.log(chalk.gray('    All API Hub JSON       ') + '自动识别 accounts.accounts 结构');
-  console.log();
-
   console.log(chalk.yellow('  示例:'));
   console.log(chalk.gray('    ccc ls                 ') + '查看配置列表和序号');
   console.log(chalk.gray('    ccc 3                  ') + '启动第 3 个配置');
   console.log(chalk.gray('    ccc 3 -d               ') + '启动第 3 个配置 + 跳过权限');
   console.log(chalk.gray('    ccc kfc                ') + '使用名称启动');
-  console.log(chalk.gray('    ccc import export.sql  ') + '从文件导入配置');
   console.log(chalk.gray('    ccc webdav push        ') + '推送配置到云端');
   console.log();
 }
