@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { getProfiles, getDefaultProfile, getProfileCredentials } from '../profiles.js';
+import { getAllProfiles, getDefaultProfile, getProfileCredentials, getCodexProfileCredentials } from '../profiles.js';
 
 export function listCommand(program) {
   program
@@ -8,17 +8,17 @@ export function listCommand(program) {
     .alias('ls')
     .description('列出所有 profiles')
     .action(() => {
-      const profiles = getProfiles();
+      const allProfiles = getAllProfiles();
       const defaultProfile = getDefaultProfile();
 
-      if (profiles.length === 0) {
+      if (allProfiles.length === 0) {
         console.log(chalk.yellow('没有可用的 profiles'));
-        console.log(chalk.gray('使用 "ccc import" 导入配置'));
+        console.log(chalk.gray('使用 "ccc new" 创建配置'));
         return;
       }
 
       const table = new Table({
-        head: [chalk.cyan('#'), chalk.cyan('Profile'), chalk.cyan('ANTHROPIC_BASE_URL')],
+        head: [chalk.cyan('#'), chalk.cyan('类型'), chalk.cyan('Profile'), chalk.cyan('API URL')],
         style: { head: [], border: [] },
         chars: {
           'top': '─', 'top-mid': '┬', 'top-left': '┌', 'top-right': '┐',
@@ -28,19 +28,26 @@ export function listCommand(program) {
         }
       });
 
-      profiles.forEach((p, index) => {
-        const isDefault = p === defaultProfile;
-        const { apiUrl } = getProfileCredentials(p);
-        const baseUrl = apiUrl || chalk.gray('(未设置)');
+      allProfiles.forEach((p, index) => {
+        const isDefault = p.name === defaultProfile;
+
+        let apiUrl;
+        if (p.type === 'codex') {
+          const creds = getCodexProfileCredentials(p.name);
+          apiUrl = creds.baseUrl || chalk.gray('(未设置)');
+        } else {
+          const creds = getProfileCredentials(p.name);
+          apiUrl = creds.apiUrl || chalk.gray('(未设置)');
+        }
 
         const num = isDefault ? chalk.green(`${index + 1}`) : chalk.gray(`${index + 1}`);
-        const name = isDefault ? chalk.green(`${p} *`) : p;
-        table.push([num, name, baseUrl]);
+        const typeTag = p.type === 'codex' ? chalk.blue('Codex') : chalk.magenta('Claude');
+        const name = isDefault ? chalk.green(`${p.name} *`) : p.name;
+        table.push([num, typeTag, name, apiUrl]);
       });
 
       console.log();
       console.log(table.toString());
-      console.log(chalk.gray(`\n  共 ${profiles.length} 个配置，* 表示默认，可用序号或名称启动\n`));
+      console.log(chalk.gray(`\n  共 ${allProfiles.length} 个配置，* 表示默认，可用序号或名称启动\n`));
     });
 }
-

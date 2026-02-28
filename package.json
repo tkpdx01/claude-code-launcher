@@ -1,7 +1,7 @@
 {
   "name": "@tkpdx01/ccc",
-  "version": "1.5.0",
-  "description": "Claude Code Settings Launcher - Manage multiple Claude Code profiles",
+  "version": "1.6.0",
+  "description": "Claude Code / Codex Settings Launcher - Manage multiple Claude Code and Codex profiles",
   "main": "index.js",
   "bin": {
     "ccc": "./index.js"
@@ -14,6 +14,8 @@
   "keywords": [
     "claude",
     "claude-code",
+    "codex",
+    "openai",
     "cli",
     "settings",
     "launcher",

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { CONFIG_DIR, PROFILES_DIR, DEFAULT_FILE, CLAUDE_SETTINGS_PATH } from './config.js';
+import { CONFIG_DIR, PROFILES_DIR, CODEX_PROFILES_DIR, DEFAULT_FILE, CLAUDE_SETTINGS_PATH, CODEX_HOME_PATH } from './config.js';
 
 function stringifyClaudeSettings(settings) {
   // Claude Code 默认 settings.json 使用 2 空格缩进，并以换行结尾（便于 diff/兼容各平台编辑器）
@@ -15,6 +15,9 @@ export function ensureDirs() {
   }
   if (!fs.existsSync(PROFILES_DIR)) {
     fs.mkdirSync(PROFILES_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(CODEX_PROFILES_DIR)) {
+    fs.mkdirSync(CODEX_PROFILES_DIR, { recursive: true });
   }
 }
 
@@ -327,4 +330,222 @@ export function clearDefaultProfile() {
   if (fs.existsSync(DEFAULT_FILE)) {
     fs.unlinkSync(DEFAULT_FILE);
   }
+}
+
+// ============================================================
+// Codex Profile 管理
+// ============================================================
+
+// 获取 Codex profile 目录路径
+export function getCodexProfileDir(name) {
+  return path.join(CODEX_PROFILES_DIR, name);
+}
+
+// 检查 Codex profile 是否存在
+export function codexProfileExists(name) {
+  const dir = getCodexProfileDir(name);
+  return fs.existsSync(path.join(dir, 'auth.json'));
+}
+
+// 获取所有 Codex profiles（按 a-z 排序）
+export function getCodexProfiles() {
+  ensureDirs();
+  if (!fs.existsSync(CODEX_PROFILES_DIR)) return [];
+  return fs.readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })
+    .filter(d => d.isDirectory() && fs.existsSync(path.join(CODEX_PROFILES_DIR, d.name, 'auth.json')))
+    .map(d => d.name)
+    .sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
+}
+
+// 读取 Codex profile
+export function readCodexProfile(name) {
+  const dir = getCodexProfileDir(name);
+  const authPath = path.join(dir, 'auth.json');
+  const configPath = path.join(dir, 'config.toml');
+
+  if (!fs.existsSync(authPath)) return null;
+
+  try {
+    const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
+    const configToml = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf-8') : '';
+    return { auth, configToml };
+  } catch {
+    return null;
+  }
+}
+
+// 保存 Codex profile
+export function saveCodexProfile(name, auth, configToml) {
+  ensureDirs();
+  const dir = getCodexProfileDir(name);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify(auth, null, 2) + '\n');
+  fs.writeFileSync(path.join(dir, 'config.toml'), configToml);
+}
+
+// 生成 Codex config.toml 内容
+export function generateCodexConfigToml(baseUrl, model) {
+  let lines = ['# Codex profile managed by ccc'];
+
+  if (model) {
+    lines.push(`model = "${model}"`);
+  }
+
+  if (baseUrl && baseUrl !== 'https://api.openai.com/v1') {
+    lines.push('');
+    lines.push('[model_providers.openai]');
+    lines.push(`name = "OpenAI"`);
+    lines.push(`base_url = "${baseUrl}"`);
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+// 创建 Codex profile
+export function createCodexProfile(name, apiKey, baseUrl, model) {
+  const auth = {
+    auth_mode: 'apikey',
+    OPENAI_API_KEY: apiKey
+  };
+  const configToml = generateCodexConfigToml(baseUrl, model);
+  saveCodexProfile(name, auth, configToml);
+  return { auth, configToml };
+}
+
+// 获取 Codex profile 的凭证
+export function getCodexProfileCredentials(name) {
+  const profile = readCodexProfile(name);
+  if (!profile) return { apiKey: '', baseUrl: '', model: '' };
+
+  const apiKey = profile.auth?.OPENAI_API_KEY || '';
+
+  // 从 config.toml 解析 base_url 和 model
+  let baseUrl = '';
+  let model = '';
+  if (profile.configToml) {
+    const baseUrlMatch = profile.configToml.match(/base_url\s*=\s*"([^"]+)"/);
+    if (baseUrlMatch) baseUrl = baseUrlMatch[1];
+    const modelMatch = profile.configToml.match(/^model\s*=\s*"([^"]+)"/m);
+    if (modelMatch) model = modelMatch[1];
+  }
+
+  return { apiKey, baseUrl: baseUrl || 'https://api.openai.com/v1', model: model || '' };
+}
+
+// 删除 Codex profile
+export function deleteCodexProfile(name) {
+  const dir = getCodexProfileDir(name);
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true });
+  }
+}
+
+// 同步 Codex profile（从 ~/.codex/ 模板同步，保留 API 凭证）
+export function syncCodexProfileWithTemplate(name) {
+  const templateConfigPath = path.join(CODEX_HOME_PATH, 'config.toml');
+  if (!fs.existsSync(templateConfigPath)) return null;
+
+  const current = readCodexProfile(name);
+  if (!current) return null;
+
+  // 读取模板 config.toml
+  let templateConfig = fs.readFileSync(templateConfigPath, 'utf-8');
+
+  // 保留当前 profile 的 base_url 和 model
+  const { baseUrl, model } = getCodexProfileCredentials(name);
+
+  // 在模板基础上覆盖 base_url 和 model
+  // 如果当前 profile 有自定义 base_url，追加到模板
+  if (baseUrl && baseUrl !== 'https://api.openai.com/v1') {
+    // 检查模板是否已有 [model_providers.openai] 节
+    if (templateConfig.includes('[model_providers.openai]')) {
+      templateConfig = templateConfig.replace(
+        /(\[model_providers\.openai\][^\[]*?)base_url\s*=\s*"[^"]*"/,
+        `$1base_url = "${baseUrl}"`
+      );
+    } else {
+      templateConfig += `\n[model_providers.openai]\nbase_url = "${baseUrl}"\n`;
+    }
+  }
+
+  if (model) {
+    if (templateConfig.match(/^model\s*=/m)) {
+      templateConfig = templateConfig.replace(/^model\s*=\s*"[^"]*"/m, `model = "${model}"`);
+    } else {
+      templateConfig = `model = "${model}"\n` + templateConfig;
+    }
+  }
+
+  saveCodexProfile(name, current.auth, templateConfig);
+  return { auth: current.auth, configToml: templateConfig };
+}
+
+// 应用 Claude profile 到 ~/.claude/settings.json
+export function applyClaudeProfile(name) {
+  const profile = readProfile(name);
+  if (!profile) return false;
+  fs.writeFileSync(CLAUDE_SETTINGS_PATH, stringifyClaudeSettings(profile));
+  return true;
+}
+
+// 应用 Codex profile 到 ~/.codex/
+export function applyCodexProfile(name) {
+  const profile = readCodexProfile(name);
+  if (!profile) return false;
+
+  if (!fs.existsSync(CODEX_HOME_PATH)) {
+    fs.mkdirSync(CODEX_HOME_PATH, { recursive: true });
+  }
+
+  // 写入 auth.json
+  fs.writeFileSync(
+    path.join(CODEX_HOME_PATH, 'auth.json'),
+    JSON.stringify(profile.auth, null, 2) + '\n'
+  );
+
+  // 写入 config.toml（如果有内容）
+  if (profile.configToml && profile.configToml.trim()) {
+    fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), profile.configToml);
+  }
+
+  return true;
+}
+
+// ============================================================
+// 统一 Profile 管理（Claude + Codex 混合）
+// ============================================================
+
+// 获取所有 profiles（混合 Claude 和 Codex），按名称排序
+export function getAllProfiles() {
+  const claudeProfiles = getProfiles().map(name => ({ name, type: 'claude' }));
+  const codexProfiles = getCodexProfiles().map(name => ({ name, type: 'codex' }));
+  return [...claudeProfiles, ...codexProfiles]
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' }));
+}
+
+// 根据序号或名称解析 profile（统一）
+export function resolveAnyProfile(input) {
+  const all = getAllProfiles();
+  const map = {};
+  all.forEach((p, i) => { map[i + 1] = p; });
+
+  // 尝试作为数字序号
+  const num = parseInt(input, 10);
+  if (!isNaN(num) && map[num]) {
+    return map[num];
+  }
+
+  // 作为名称查找
+  const found = all.find(p => p.name === input);
+  return found || null;
+}
+
+// 检查任意类型 profile 是否存在
+export function anyProfileExists(name) {
+  if (profileExists(name)) return { exists: true, type: 'claude' };
+  if (codexProfileExists(name)) return { exists: true, type: 'codex' };
+  return { exists: false, type: null };
 }

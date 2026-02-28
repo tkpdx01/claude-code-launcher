@@ -2,23 +2,21 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import {
   getAllProfiles,
-  getDefaultProfile,
   resolveAnyProfile,
-  deleteProfile,
-  deleteCodexProfile,
-  clearDefaultProfile
+  applyClaudeProfile,
+  applyCodexProfile
 } from '../profiles.js';
 
-export function deleteCommand(program) {
+export function applyCommand(program) {
   program
-    .command('delete [profile]')
-    .alias('rm')
-    .description('删除 profile')
+    .command('apply [profile]')
+    .description('将 profile 的配置应用到默认目录（~/.claude 或 ~/.codex）')
     .action(async (profile) => {
       const allProfiles = getAllProfiles();
 
       if (allProfiles.length === 0) {
         console.log(chalk.yellow('没有可用的 profiles'));
+        console.log(chalk.gray('使用 "ccc new" 创建配置'));
         process.exit(0);
       }
 
@@ -34,7 +32,7 @@ export function deleteCommand(program) {
           {
             type: 'list',
             name: 'selected',
-            message: '选择要删除的配置:',
+            message: '选择要应用的配置:',
             choices
           }
         ]);
@@ -48,12 +46,13 @@ export function deleteCommand(program) {
       }
 
       const typeLabel = profileInfo.type === 'codex' ? 'Codex' : 'Claude';
+      const targetDir = profileInfo.type === 'codex' ? '~/.codex/' : '~/.claude/settings.json';
 
       const { confirm } = await inquirer.prompt([
         {
           type: 'confirm',
           name: 'confirm',
-          message: `确定要删除 ${typeLabel} 配置 "${profileInfo.name}" 吗?`,
+          message: `将 ${typeLabel} 配置 "${profileInfo.name}" 应用到 ${targetDir}？（会覆盖当前配置）`,
           default: false
         }
       ]);
@@ -63,16 +62,18 @@ export function deleteCommand(program) {
         process.exit(0);
       }
 
+      let result;
       if (profileInfo.type === 'codex') {
-        deleteCodexProfile(profileInfo.name);
+        result = applyCodexProfile(profileInfo.name);
       } else {
-        deleteProfile(profileInfo.name);
+        result = applyClaudeProfile(profileInfo.name);
       }
 
-      if (getDefaultProfile() === profileInfo.name) {
-        clearDefaultProfile();
+      if (result) {
+        console.log(chalk.green(`\n✓ ${typeLabel} 配置 "${profileInfo.name}" 已应用到 ${targetDir}`));
+      } else {
+        console.log(chalk.red(`\n✗ 应用失败`));
+        process.exit(1);
       }
-
-      console.log(chalk.green(`✓ ${typeLabel} Profile "${profileInfo.name}" 已删除`));
     });
 }

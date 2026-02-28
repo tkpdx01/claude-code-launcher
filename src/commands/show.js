@@ -1,11 +1,15 @@
 import chalk from 'chalk';
 import inquirer from 'inquirer';
-import { 
-  getProfiles, 
-  getDefaultProfile, 
-  profileExists, 
-  getProfilePath, 
-  readProfile 
+import {
+  getAllProfiles,
+  getDefaultProfile,
+  anyProfileExists,
+  resolveAnyProfile,
+  getProfilePath,
+  getCodexProfileDir,
+  readProfile,
+  readCodexProfile,
+  getCodexProfileCredentials
 } from '../profiles.js';
 import { formatValue } from '../utils.js';
 
@@ -14,55 +18,81 @@ export function showCommand(program) {
     .command('show [profile]')
     .description('显示 profile 的完整配置')
     .action(async (profile) => {
-      const profiles = getProfiles();
+      const allProfiles = getAllProfiles();
 
-      if (profiles.length === 0) {
+      if (allProfiles.length === 0) {
         console.log(chalk.yellow('没有可用的 profiles'));
         process.exit(0);
       }
 
-      // 如果没有指定 profile，交互选择
+      let profileInfo;
+
       if (!profile) {
         const defaultProfile = getDefaultProfile();
-        const { selectedProfile } = await inquirer.prompt([
+        const choices = allProfiles.map(p => {
+          const typeTag = p.type === 'codex' ? chalk.blue('[Codex]') : chalk.magenta('[Claude]');
+          return { name: `${typeTag} ${p.name}`, value: p };
+        });
+
+        const { selected } = await inquirer.prompt([
           {
             type: 'list',
-            name: 'selectedProfile',
+            name: 'selected',
             message: '选择要查看的配置:',
-            choices: profiles,
-            default: defaultProfile
+            choices,
+            default: allProfiles.findIndex(p => p.name === defaultProfile)
           }
         ]);
-        profile = selectedProfile;
-      }
-
-      if (!profileExists(profile)) {
-        console.log(chalk.red(`Profile "${profile}" 不存在`));
-        process.exit(1);
-      }
-
-      const profilePath = getProfilePath(profile);
-      const settings = readProfile(profile);
-      const isDefault = getDefaultProfile() === profile;
-
-      console.log(chalk.cyan.bold(`\n  Profile: ${profile}`) + (isDefault ? chalk.green(' (默认)') : ''));
-      console.log(chalk.gray(`  路径: ${profilePath}\n`));
-
-      // 格式化显示配置
-      Object.entries(settings).forEach(([key, value]) => {
-        const formattedValue = formatValue(key, value);
-        if ((key === 'apiKey' || key === 'ANTHROPIC_AUTH_TOKEN') && value) {
-          console.log(`  ${chalk.cyan(key)}: ${chalk.yellow(formattedValue)}`);
-        } else if (typeof value === 'boolean') {
-          console.log(`  ${chalk.cyan(key)}: ${value ? chalk.green(formattedValue) : chalk.red(formattedValue)}`);
-        } else if (typeof value === 'object') {
-          console.log(`  ${chalk.cyan(key)}: ${chalk.gray(formattedValue)}`);
-        } else {
-          console.log(`  ${chalk.cyan(key)}: ${chalk.white(formattedValue)}`);
+        profileInfo = selected;
+      } else {
+        profileInfo = resolveAnyProfile(profile);
+        if (!profileInfo) {
+          console.log(chalk.red(`Profile "${profile}" 不存在`));
+          process.exit(1);
         }
-      });
+      }
+
+      const isDefault = getDefaultProfile() === profileInfo.name;
+
+      if (profileInfo.type === 'codex') {
+        const dir = getCodexProfileDir(profileInfo.name);
+        const codexProfile = readCodexProfile(profileInfo.name);
+        const { apiKey, baseUrl, model } = getCodexProfileCredentials(profileInfo.name);
+
+        console.log(chalk.cyan.bold(`\n  Profile: ${profileInfo.name}`) + ` ${chalk.blue('[Codex]')}` + (isDefault ? chalk.green(' (默认)') : ''));
+        console.log(chalk.gray(`  路径: ${dir}\n`));
+
+        console.log(`  ${chalk.cyan('OPENAI_API_KEY')}: ${chalk.yellow(apiKey ? apiKey.substring(0, 15) + '...' : '未设置')}`);
+        console.log(`  ${chalk.cyan('Base URL')}: ${chalk.white(baseUrl)}`);
+        console.log(`  ${chalk.cyan('Model')}: ${chalk.white(model || '(默认)')}`);
+
+        if (codexProfile?.configToml) {
+          console.log(`\n  ${chalk.cyan('config.toml')}:`);
+          codexProfile.configToml.split('\n').forEach(line => {
+            console.log(`    ${chalk.gray(line)}`);
+          });
+        }
+      } else {
+        const profilePath = getProfilePath(profileInfo.name);
+        const settings = readProfile(profileInfo.name);
+
+        console.log(chalk.cyan.bold(`\n  Profile: ${profileInfo.name}`) + ` ${chalk.magenta('[Claude]')}` + (isDefault ? chalk.green(' (默认)') : ''));
+        console.log(chalk.gray(`  路径: ${profilePath}\n`));
+
+        Object.entries(settings).forEach(([key, value]) => {
+          const formattedValue = formatValue(key, value);
+          if ((key === 'apiKey' || key === 'ANTHROPIC_AUTH_TOKEN') && value) {
+            console.log(`  ${chalk.cyan(key)}: ${chalk.yellow(formattedValue)}`);
+          } else if (typeof value === 'boolean') {
+            console.log(`  ${chalk.cyan(key)}: ${value ? chalk.green(formattedValue) : chalk.red(formattedValue)}`);
+          } else if (typeof value === 'object') {
+            console.log(`  ${chalk.cyan(key)}: ${chalk.gray(formattedValue)}`);
+          } else {
+            console.log(`  ${chalk.cyan(key)}: ${chalk.white(formattedValue)}`);
+          }
+        });
+      }
 
       console.log();
     });
 }
-
