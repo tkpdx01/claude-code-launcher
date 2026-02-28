@@ -1,129 +1,107 @@
-# claude-code-launcher (ccc)
+# ccc — Claude Code / Codex Launcher
 
-Claude Code Settings Launcher - Launch Claude Code with different settings profiles. Run multiple Claude instances with different API configurations simultaneously.
+![ccc cover](cover.png)
 
-Claude Code 设置启动器 - 使用不同的 settings profile 文件启动 Claude Code，可同时运行多个使用不同 API 配置的 Claude 实例。
+Manage multiple API profiles for **Claude Code** and **OpenAI Codex**. Switch between providers, keys, and endpoints instantly.
 
-## Installation / 安装
+管理 **Claude Code** 和 **OpenAI Codex** 的多套 API 配置，一键切换 Provider、Key 和 Endpoint。
+
+## Install
 
 ```bash
 npm install -g @tkpdx01/ccc
 ```
 
-## Usage / 使用
-
-### Launch / 启动
+## Quick Start
 
 ```bash
-ccc                    # Default profile or select / 使用默认或交互选择
-ccc <profile>          # Specific profile / 指定配置
-ccc -d                 # With --dangerously-skip-permissions
-ccc <profile> -d       # Combine both / 组合使用
+ccc new              # Create a profile (Claude or Codex)
+ccc list             # List all profiles
+ccc <profile>        # Launch with profile (by name or index)
+ccc                  # Launch default, or select interactively
 ```
 
-### Manage Profiles / 管理配置
+## Commands
+
+### Launch
 
 ```bash
-ccc list               # List profiles / 列出配置
-ccc list -v            # List with URLs / 显示 API URLs
-ccc show [profile]     # Show config / 显示完整配置
-ccc use <profile>      # Set default / 设置默认
-ccc new [name]         # Create from template / 从模板创建
-ccc sync [profile]     # Sync from template / 从模板同步
-ccc sync -a            # Sync all / 同步所有
-ccc edit [profile]     # Edit profile / 编辑配置
-ccc delete [profile]   # Delete profile / 删除配置
+ccc <profile>        # Auto-detect type and launch
+ccc <index>          # Launch by index number (e.g. ccc 3)
+ccc -d               # Claude: --dangerously-skip-permissions / Codex: --full-auto
 ```
 
-### WebDAV Cloud Sync / WebDAV 云同步
+### Profile Management
 
 ```bash
-ccc webdav setup       # Configure WebDAV and sync password / 配置 WebDAV 和同步密码
-ccc webdav push        # Push profiles to cloud / 推送到云端
-ccc webdav pull        # Pull profiles from cloud / 从云端拉取
-ccc webdav status      # View sync status / 查看同步状态
+ccc new [name]       # Create profile (choose Claude or Codex)
+ccc edit [profile]   # Edit API credentials
+ccc use <profile>    # Set default profile
+ccc show [profile]   # Show full config
+ccc delete [profile] # Delete profile
+ccc sync [profile]   # Sync from template, preserve credentials
+ccc sync --all       # Sync all profiles
+ccc apply [profile]  # Write profile config to ~/.claude or ~/.codex
 ```
 
-## Features / 功能
-
-- **Multiple Profiles / 多配置**: Manage different API configurations
-- **Template Support / 模板**: Based on `~/.claude/settings.json`
-- **Sync Settings / 同步**: Update from template, preserve credentials
-- **Claude Env Defaults / Claude 环境变量默认值**: Auto-ensure these values in the `env` section of both `~/.claude/settings.json` and each profile: `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, `DISABLE_INSTALLATION_CHECKS=1`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
-- **WebDAV Cloud Sync / 云同步**: Encrypted sync across devices
-
-## Sync Command / 同步命令
-
-The `sync` command updates profiles with the latest settings from `~/.claude/settings.json` while preserving each profile's API credentials (`ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL`).
-
-`sync` 命令从 `~/.claude/settings.json` 同步最新设置到 profiles，同时保留每个 profile 的 API 凭证（`ANTHROPIC_AUTH_TOKEN` 和 `ANTHROPIC_BASE_URL`）。
+### WebDAV Cloud Sync
 
 ```bash
-ccc sync [profile]     # Sync single profile / 同步单个配置
-ccc sync --all         # Sync all profiles / 同步所有配置
+ccc webdav setup     # Configure WebDAV + encryption password
+ccc webdav push      # Upload (AES-256-GCM encrypted)
+ccc webdav pull      # Download and decrypt
+ccc webdav status    # Check sync status
 ```
 
-Use this when you've updated your main Claude settings (plugins, model, etc.) and want to apply those changes to all profiles.
+## How It Works
 
-当你更新了主 Claude 设置（插件、模型等）并想将这些更改应用到所有 profiles 时使用此命令。
+### Claude Profiles
 
-## WebDAV Cloud Sync / WebDAV 云同步
+Each profile is a copy of `~/.claude/settings.json` with its own API credentials. Launched via:
 
-Sync your profiles across multiple devices using any WebDAV service (Nutstore, Nextcloud, etc.).
-
-使用任意 WebDAV 服务（坚果云、Nextcloud 等）在多设备间同步配置。
-
-### Setup / 配置
-
-```bash
-ccc webdav setup
+```
+claude --settings ~/.ccc/profiles/<name>.json
 ```
 
-This will prompt for:
-- WebDAV server URL
-- Username / Password
-- Remote storage path
-- Sync password (for encryption)
+### Codex Profiles
 
-### Commands / 命令
+Each profile is a directory containing `auth.json` + `config.toml`. Launched via:
 
-```bash
-ccc webdav push        # Upload encrypted profiles / 上传加密配置
-ccc webdav pull        # Download and decrypt / 下载并解密
-ccc webdav status      # View sync status / 查看同步状态
-ccc webdav push -f     # Force push (skip conflict prompts) / 强制推送
-ccc webdav pull -f     # Force pull (skip conflict prompts) / 强制拉取
+```
+CODEX_HOME=~/.ccc/codex-profiles/<name>/ codex
 ```
 
-### Security / 安全设计
+No global environment variables are modified — everything is process-scoped.
 
-- **End-to-end encryption**: All data is encrypted locally with AES-256-GCM before upload. Even if someone gains access to your WebDAV storage, they cannot read your API keys without the sync password.
+### Storage
 
-- **Password-based protection**: Your sync password is never transmitted. It derives the encryption key using PBKDF2 (100,000 iterations).
+```
+~/.ccc/
+├── profiles/              # Claude profiles (*.json)
+├── codex-profiles/        # Codex profiles
+│   └── <name>/
+│       ├── auth.json      # API key
+│       └── config.toml    # Model & endpoint config
+├── default                # Default profile name
+└── webdav.json            # Cloud sync config
+```
 
-- **Local password caching**: On trusted devices, the password is cached locally (encrypted with machine fingerprint), so you don't need to enter it every time.
+## Key Features
 
-- **Manual sync only**: Synchronization only happens when you explicitly run `push` or `pull`. No background processes, no automatic uploads. You always know when your data leaves your machine.
+- **Dual CLI support** — Claude Code + OpenAI Codex in one tool
+- **Unified index** — All profiles sorted together, launch by number
+- **Apply command** — Push a profile's config to `~/.claude` or `~/.codex`
+- **Template sync** — Update from main settings, keep credentials
+- **Cloud sync** — E2E encrypted WebDAV sync across devices
+- **Zero env pollution** — API keys stored in config files, not shell env
 
-- **Non-destructive merge**: By default, conflicts preserve both versions instead of overwriting. Use `--force` only when you're certain.
+## Security
 
-**安全设计**：
+- **AES-256-GCM** encryption for cloud sync
+- **PBKDF2** key derivation (100K iterations)
+- **Manual sync only** — no background processes
+- **Non-destructive merge** — conflicts preserve both versions
 
-- **端到端加密**：所有数据在上传前使用 AES-256-GCM 本地加密。即使他人获取了你的 WebDAV 存储访问权限，没有同步密码也无法读取你的 API Key。
-
-- **密码保护**：同步密码永不传输，使用 PBKDF2（10万次迭代）派生加密密钥。
-
-- **本机免密**：在可信设备上，密码使用机器指纹加密缓存在本地，无需每次输入。
-
-- **手动同步**：同步仅在你显式执行 `push` 或 `pull` 时发生。无后台进程，无自动上传。你始终清楚数据何时离开本机。
-
-- **无损合并**：默认情况下，冲突时保留两个版本而非覆盖。仅在确定时使用 `--force`。
-
-## Storage / 存储
-
-- Profiles: `~/.ccc/profiles/*.json`
-- Template: `~/.claude/settings.json`
-
-## License / 许可证
+## License
 
 MIT

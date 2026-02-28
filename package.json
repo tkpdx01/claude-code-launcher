@@ -1,6 +1,6 @@
 {
   "name": "@tkpdx01/ccc",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Claude Code / Codex Settings Launcher - Manage multiple Claude Code and Codex profiles",
   "main": "index.js",
   "bin": {
