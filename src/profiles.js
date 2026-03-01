@@ -336,6 +336,88 @@ export function clearDefaultProfile() {
 // Codex Profile 管理
 // ============================================================
 
+const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+const CCC_OPENAI_COMPAT_PROVIDER = 'ccc_openai';
+
+function normalizeBaseUrl(baseUrl) {
+  return (baseUrl || '').trim().replace(/\/+$/, '');
+}
+
+function isCustomOpenAIBaseUrl(baseUrl) {
+  const normalized = normalizeBaseUrl(baseUrl);
+  return normalized && normalized !== normalizeBaseUrl(OPENAI_DEFAULT_BASE_URL);
+}
+
+function extractBaseUrlFromConfigToml(configToml) {
+  if (!configToml) return OPENAI_DEFAULT_BASE_URL;
+  const baseUrlMatch = configToml.match(/base_url\s*=\s*"([^"]+)"/);
+  return baseUrlMatch ? baseUrlMatch[1] : OPENAI_DEFAULT_BASE_URL;
+}
+
+function upsertTomlKey(block, key, valueLiteral) {
+  const keyPattern = new RegExp(`^\\s*${key}\\s*=\\s*.*$`, 'm');
+  if (keyPattern.test(block)) {
+    return block.replace(keyPattern, `${key} = ${valueLiteral}`);
+  }
+  return `${block.trimEnd()}\n${key} = ${valueLiteral}\n`;
+}
+
+function ensureCodexOpenAICompatConfig(configToml, baseUrl) {
+  if (!isCustomOpenAIBaseUrl(baseUrl)) {
+    return configToml;
+  }
+
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  let output = configToml || '# Codex profile managed by ccc\n';
+  const firstSectionMatch = output.match(/^\s*\[[^\]]+\]/m);
+  const firstSectionIndex = firstSectionMatch && firstSectionMatch.index !== undefined
+    ? firstSectionMatch.index
+    : output.length;
+
+  let preamble = output.slice(0, firstSectionIndex);
+  const rest = output.slice(firstSectionIndex);
+
+  // 如果用户显式指定了非 openai provider，尊重用户配置，不自动覆盖
+  const providerMatch = preamble.match(/^\s*model_provider\s*=\s*"([^"]+)"/m);
+  if (providerMatch && !['openai', CCC_OPENAI_COMPAT_PROVIDER].includes(providerMatch[1])) {
+    return output;
+  }
+
+  if (providerMatch) {
+    preamble = preamble.replace(
+      /^\s*model_provider\s*=\s*"([^"]+)"/m,
+      `model_provider = "${CCC_OPENAI_COMPAT_PROVIDER}"`
+    );
+  } else {
+    preamble = `${preamble.replace(/\s*$/, '\n')}model_provider = "${CCC_OPENAI_COMPAT_PROVIDER}"\n`;
+  }
+
+  if (rest.trim()) {
+    output = `${preamble.trimEnd()}\n\n${rest.replace(/^\s*/, '')}`;
+  } else {
+    output = `${preamble.trimEnd()}\n`;
+  }
+
+  const sectionPattern = new RegExp(
+    `\\[model_providers\\.${CCC_OPENAI_COMPAT_PROVIDER}\\][\\s\\S]*?(?=\\n\\[|$)`
+  );
+
+  if (sectionPattern.test(output)) {
+    output = output.replace(sectionPattern, (section) => {
+      let next = section;
+      next = upsertTomlKey(next, 'name', '"OpenAI Compatible"');
+      next = upsertTomlKey(next, 'base_url', `"${normalizedBaseUrl}"`);
+      next = upsertTomlKey(next, 'wire_api', '"responses"');
+      next = upsertTomlKey(next, 'requires_openai_auth', 'true');
+      return next.trimEnd();
+    });
+  } else {
+    output = `${output.trimEnd()}\n\n[model_providers.${CCC_OPENAI_COMPAT_PROVIDER}]\nname = "OpenAI Compatible"\nbase_url = "${normalizedBaseUrl}"\nwire_api = "responses"\nrequires_openai_auth = true\n`;
+  }
+
+  return `${output.trimEnd()}\n`;
+}
+
 // 获取 Codex profile 目录路径
 export function getCodexProfileDir(name) {
   return path.join(CODEX_PROFILES_DIR, name);
@@ -388,16 +470,20 @@ export function saveCodexProfile(name, auth, configToml) {
 // 生成 Codex config.toml 内容
 export function generateCodexConfigToml(baseUrl, model) {
   let lines = ['# Codex profile managed by ccc'];
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
 
   if (model) {
     lines.push(`model = "${model}"`);
   }
 
-  if (baseUrl && baseUrl !== 'https://api.openai.com/v1') {
+  if (isCustomOpenAIBaseUrl(normalizedBaseUrl)) {
+    lines.push(`model_provider = "${CCC_OPENAI_COMPAT_PROVIDER}"`);
     lines.push('');
-    lines.push('[model_providers.openai]');
-    lines.push(`name = "OpenAI"`);
-    lines.push(`base_url = "${baseUrl}"`);
+    lines.push(`[model_providers.${CCC_OPENAI_COMPAT_PROVIDER}]`);
+    lines.push('name = "OpenAI Compatible"');
+    lines.push(`base_url = "${normalizedBaseUrl}"`);
+    lines.push('wire_api = "responses"');
+    lines.push('requires_openai_auth = true');
   }
 
   lines.push('');
@@ -432,7 +518,7 @@ export function getCodexProfileCredentials(name) {
     if (modelMatch) model = modelMatch[1];
   }
 
-  return { apiKey, baseUrl: baseUrl || 'https://api.openai.com/v1', model: model || '' };
+  return { apiKey, baseUrl: baseUrl || OPENAI_DEFAULT_BASE_URL, model: model || '' };
 }
 
 // 删除 Codex profile
@@ -457,20 +543,6 @@ export function syncCodexProfileWithTemplate(name) {
   // 保留当前 profile 的 base_url 和 model
   const { baseUrl, model } = getCodexProfileCredentials(name);
 
-  // 在模板基础上覆盖 base_url 和 model
-  // 如果当前 profile 有自定义 base_url，追加到模板
-  if (baseUrl && baseUrl !== 'https://api.openai.com/v1') {
-    // 检查模板是否已有 [model_providers.openai] 节
-    if (templateConfig.includes('[model_providers.openai]')) {
-      templateConfig = templateConfig.replace(
-        /(\[model_providers\.openai\][^\[]*?)base_url\s*=\s*"[^"]*"/,
-        `$1base_url = "${baseUrl}"`
-      );
-    } else {
-      templateConfig += `\n[model_providers.openai]\nbase_url = "${baseUrl}"\n`;
-    }
-  }
-
   if (model) {
     if (templateConfig.match(/^model\s*=/m)) {
       templateConfig = templateConfig.replace(/^model\s*=\s*"[^"]*"/m, `model = "${model}"`);
@@ -478,6 +550,9 @@ export function syncCodexProfileWithTemplate(name) {
       templateConfig = `model = "${model}"\n` + templateConfig;
     }
   }
+
+  // 对第三方 base_url 自动补齐 provider 兼容配置，避免依赖 OPENAI_BASE_URL 环境变量
+  templateConfig = ensureCodexOpenAICompatConfig(templateConfig, baseUrl);
 
   saveCodexProfile(name, current.auth, templateConfig);
   return { auth: current.auth, configToml: templateConfig };
@@ -508,7 +583,9 @@ export function applyCodexProfile(name) {
 
   // 写入 config.toml（如果有内容）
   if (profile.configToml && profile.configToml.trim()) {
-    fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), profile.configToml);
+    const baseUrl = extractBaseUrlFromConfigToml(profile.configToml);
+    const compatConfig = ensureCodexOpenAICompatConfig(profile.configToml, baseUrl);
+    fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), compatConfig);
   }
 
   return true;
