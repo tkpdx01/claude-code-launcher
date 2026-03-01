@@ -1,7 +1,5 @@
 # ccc — Claude Code / Codex Launcher
 
-![ccc cover](cover.png)
-
 Manage multiple API profiles for **Claude Code** and **OpenAI Codex**. Switch between providers, keys, and endpoints instantly.
 
 管理 **Claude Code** 和 **OpenAI Codex** 的多套 API 配置，一键切换 Provider、Key 和 Endpoint。
