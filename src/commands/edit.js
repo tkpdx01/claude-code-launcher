@@ -4,8 +4,6 @@ import inquirer from 'inquirer';
 import {
   getAllProfiles,
   getDefaultProfile,
-  profileExists,
-  codexProfileExists,
   anyProfileExists,
   getProfilePath,
   readProfile,
@@ -22,6 +20,7 @@ import {
   createCodexProfile,
   deleteCodexProfile
 } from '../profiles.js';
+import { promptCodexModel } from '../codex-models.js';
 
 export function editCommand(program) {
   program
@@ -67,18 +66,12 @@ export function editCommand(program) {
         const { apiKey: currentApiKey, baseUrl: currentBaseUrl, model: currentModel } = getCodexProfileCredentials(profileInfo.name);
 
         console.log(chalk.cyan(`\n当前配置 (${profileInfo.name}) ${chalk.blue('[Codex]')}:`));
-        console.log(chalk.gray(`  OPENAI_API_KEY: ${currentApiKey ? currentApiKey.substring(0, 10) + '...' : '未设置'}`));
         console.log(chalk.gray(`  Base URL: ${currentBaseUrl || '未设置'}`));
+        console.log(chalk.gray(`  OPENAI_API_KEY: ${currentApiKey ? currentApiKey.substring(0, 10) + '...' : '未设置'}`));
         console.log(chalk.gray(`  Model: ${currentModel || '(默认)'}`));
         console.log();
 
-        const { apiKey, baseUrl, model, newName } = await inquirer.prompt([
-          {
-            type: 'input',
-            name: 'apiKey',
-            message: 'OPENAI_API_KEY:',
-            default: currentApiKey || ''
-          },
+        const { apiKey, baseUrl, newName } = await inquirer.prompt([
           {
             type: 'input',
             name: 'baseUrl',
@@ -87,9 +80,9 @@ export function editCommand(program) {
           },
           {
             type: 'input',
-            name: 'model',
-            message: 'Model (留空使用默认):',
-            default: currentModel || ''
+            name: 'apiKey',
+            message: 'OPENAI_API_KEY:',
+            default: currentApiKey || ''
           },
           {
             type: 'input',
@@ -98,6 +91,7 @@ export function editCommand(program) {
             default: profileInfo.name
           }
         ]);
+        const model = await promptCodexModel(baseUrl, apiKey, currentModel || '');
 
         if (newName && newName !== profileInfo.name) {
           const check = anyProfileExists(newName);

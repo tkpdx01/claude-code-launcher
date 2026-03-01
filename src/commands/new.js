@@ -2,10 +2,7 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import {
   ensureDirs,
-  getProfiles,
   getAllProfiles,
-  profileExists,
-  codexProfileExists,
   anyProfileExists,
   createProfileFromTemplate,
   createCodexProfile,
@@ -13,6 +10,7 @@ import {
   ensureClaudeSettingsExtras
 } from '../profiles.js';
 import { launchClaude, launchCodex } from '../launch.js';
+import { promptCodexModel } from '../codex-models.js';
 
 const RESERVED_PROFILE_NAMES = [
   'list',
@@ -106,20 +104,14 @@ export function newCommand(program) {
         const answers = await inquirer.prompt([
           {
             type: 'input',
-            name: 'apiKey',
-            message: 'OPENAI_API_KEY:',
-            default: ''
-          },
-          {
-            type: 'input',
             name: 'baseUrl',
             message: 'Base URL:',
             default: 'https://api.openai.com/v1'
           },
           {
             type: 'input',
-            name: 'model',
-            message: 'Model (留空使用默认):',
+            name: 'apiKey',
+            message: 'OPENAI_API_KEY:',
             default: ''
           },
           {
@@ -130,6 +122,7 @@ export function newCommand(program) {
             validate: validateProfileName
           }
         ]);
+        const model = await promptCodexModel(answers.baseUrl, answers.apiKey, '');
 
         const finalName = answers.finalName;
         if (finalName !== name) {
@@ -151,7 +144,7 @@ export function newCommand(program) {
         }
 
         ensureDirs();
-        createCodexProfile(finalName, answers.apiKey, answers.baseUrl, answers.model);
+        createCodexProfile(finalName, answers.apiKey, answers.baseUrl, model);
         console.log(chalk.green(`\n✓ Codex 配置 "${finalName}" 已创建`));
 
         const allProfiles = getAllProfiles();

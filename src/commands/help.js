@@ -42,7 +42,7 @@ export function showHelp() {
   console.log(chalk.gray('    ccc new                ') + '交互式创建，选择 Claude 或 Codex 类型');
   console.log(chalk.gray('    ccc new myprofile      ') + '指定名称创建，随后选择类型并填写凭证');
   console.log(chalk.gray('    ') + chalk.dim('Claude 需要: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN'));
-  console.log(chalk.gray('    ') + chalk.dim('Codex  需要: OPENAI_API_KEY + Base URL + Model（可选）'));
+  console.log(chalk.gray('    ') + chalk.dim('Codex  需要: Base URL + OPENAI_API_KEY + Model（可从接口拉取后选择）'));
   console.log();
 
   console.log(chalk.yellow('  示例:'));
