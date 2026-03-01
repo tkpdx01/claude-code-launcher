@@ -38,6 +38,13 @@ export function showHelp() {
   console.log(chalk.gray('    ~/.ccc/.sync_key       ') + '本地密码缓存（机器指纹加密）');
   console.log();
 
+  console.log(chalk.yellow('  创建配置:'));
+  console.log(chalk.gray('    ccc new                ') + '交互式创建，选择 Claude 或 Codex 类型');
+  console.log(chalk.gray('    ccc new myprofile      ') + '指定名称创建，随后选择类型并填写凭证');
+  console.log(chalk.gray('    ') + chalk.dim('Claude 需要: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN'));
+  console.log(chalk.gray('    ') + chalk.dim('Codex  需要: OPENAI_API_KEY + Base URL + Model（可选）'));
+  console.log();
+
   console.log(chalk.yellow('  示例:'));
   console.log(chalk.gray('    ccc ls                 ') + '查看配置列表和序号');
   console.log(chalk.gray('    ccc 3                  ') + '启动第 3 个配置（自动识别 Claude/Codex）');
