@@ -69,8 +69,21 @@ export function applyCommand(program) {
         result = applyClaudeProfile(profileInfo.name);
       }
 
-      if (result) {
+      const success = profileInfo.type === 'codex'
+        ? Boolean(result && (result.success ?? result))
+        : Boolean(result);
+
+      if (success) {
         console.log(chalk.green(`\n✓ ${typeLabel} 配置 "${profileInfo.name}" 已应用到 ${targetDir}`));
+
+        if (profileInfo.type === 'codex' && result?.envSync?.filePath) {
+          const home = process.env.HOME || '';
+          const rcPathDisplay = home && result.envSync.filePath.startsWith(home)
+            ? `~${result.envSync.filePath.slice(home.length)}`
+            : result.envSync.filePath;
+          console.log(chalk.gray(`  已同步 OPENAI_BASE_URL / OPENAI_API_KEY 到 ${rcPathDisplay}`));
+          console.log(chalk.gray(`  当前终端可执行: source ${rcPathDisplay}`));
+        }
       } else {
         console.log(chalk.red(`\n✗ 应用失败`));
         process.exit(1);

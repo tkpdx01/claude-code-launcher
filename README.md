@@ -40,6 +40,7 @@ ccc delete [profile] # Delete profile
 ccc sync [profile]   # Sync from template, preserve credentials
 ccc sync --all       # Sync all profiles
 ccc apply [profile]  # Write profile config to ~/.claude or ~/.codex
+ccc resettodefault   # Restore pre-apply ~/.codex and clean OPENAI env exports
 ```
 
 ### WebDAV Cloud Sync
@@ -69,7 +70,8 @@ Each profile is a directory containing `auth.json` + `config.toml`. Launched via
 CODEX_HOME=~/.ccc/codex-profiles/<name>/ codex
 ```
 
-No global environment variables are modified — everything is process-scoped.
+`ccc <profile>` 启动仍是进程级环境变量，不污染全局。
+`ccc apply`（Codex）会同步 `OPENAI_BASE_URL` / `OPENAI_API_KEY` 到 shell rc，并可用 `ccc resettodefault` 回滚。
 
 ### Storage
 
@@ -89,9 +91,9 @@ No global environment variables are modified — everything is process-scoped.
 - **Dual CLI support** — Claude Code + OpenAI Codex in one tool
 - **Unified index** — All profiles sorted together, launch by number
 - **Apply command** — Push a profile's config to `~/.claude` or `~/.codex`
+- **Reset to default** — Restore pre-apply Codex config and shell env exports
 - **Template sync** — Update from main settings, keep credentials
 - **Cloud sync** — E2E encrypted WebDAV sync across devices
-- **Zero env pollution** — API keys stored in config files, not shell env
 
 ## Security
 

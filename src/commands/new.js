@@ -25,6 +25,7 @@ const RESERVED_PROFILE_NAMES = [
   'rm',
   'sync',
   'apply',
+  'resettodefault',
   'webdav',
   'help'
 ];

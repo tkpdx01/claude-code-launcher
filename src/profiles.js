@@ -338,6 +338,10 @@ export function clearDefaultProfile() {
 
 const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const CCC_OPENAI_COMPAT_PROVIDER = 'ccc_openai';
+const CODEX_RESET_DIR = path.join(CODEX_HOME_PATH, '.ccc-reset-default');
+const CODEX_RESET_AUTH_BACKUP = path.join(CODEX_RESET_DIR, 'auth.json.original');
+const CODEX_RESET_CONFIG_BACKUP = path.join(CODEX_RESET_DIR, 'config.toml.original');
+const CODEX_RESET_META_PATH = path.join(CODEX_RESET_DIR, 'meta.json');
 
 function normalizeBaseUrl(baseUrl) {
   return (baseUrl || '').trim().replace(/\/+$/, '');
@@ -360,6 +364,132 @@ function upsertTomlKey(block, key, valueLiteral) {
     return block.replace(keyPattern, `${key} = ${valueLiteral}`);
   }
   return `${block.trimEnd()}\n${key} = ${valueLiteral}\n`;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeShellSingleQuote(value) {
+  return String(value ?? '').replace(/'/g, `'\"'\"'`);
+}
+
+function getPreferredShellRcPath() {
+  const shellPath = (process.env.SHELL || '').toLowerCase();
+  if (shellPath.includes('zsh')) {
+    return path.join(os.homedir(), '.zshrc');
+  }
+  if (shellPath.includes('bash')) {
+    return path.join(os.homedir(), '.bashrc');
+  }
+  return path.join(os.homedir(), '.profile');
+}
+
+function stripShellExport(content, key) {
+  const pattern = new RegExp(`^\\s*export\\s+${escapeRegExp(key)}=.*(?:\\r?\\n)?`, 'gm');
+  return content.replace(pattern, '');
+}
+
+function extractShellExportLine(content, key) {
+  const pattern = new RegExp(`^\\s*export\\s+${escapeRegExp(key)}=.*$`, 'm');
+  const match = content.match(pattern);
+  return match ? match[0] : '';
+}
+
+function upsertShellExport(content, key, rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return { content, changed: false };
+  }
+
+  const line = `export ${key}='${escapeShellSingleQuote(rawValue)}'`;
+  let nextContent = stripShellExport(content, key);
+  if (nextContent && !nextContent.endsWith('\n')) {
+    nextContent += '\n';
+  }
+  nextContent += `${line}\n`;
+  return { content: nextContent, changed: nextContent !== content };
+}
+
+function upsertShellExportLine(content, key, line) {
+  let nextContent = stripShellExport(content, key);
+  if (!line) {
+    return { content: nextContent, changed: nextContent !== content };
+  }
+  if (nextContent && !nextContent.endsWith('\n')) {
+    nextContent += '\n';
+  }
+  nextContent += `${line}\n`;
+  return { content: nextContent, changed: nextContent !== content };
+}
+
+function ensureCodexResetBackup(shellRcPath) {
+  if (fs.existsSync(CODEX_RESET_META_PATH)) {
+    return;
+  }
+
+  if (!fs.existsSync(CODEX_RESET_DIR)) {
+    fs.mkdirSync(CODEX_RESET_DIR, { recursive: true });
+  }
+
+  const authPath = path.join(CODEX_HOME_PATH, 'auth.json');
+  const configPath = path.join(CODEX_HOME_PATH, 'config.toml');
+  const authExisted = fs.existsSync(authPath);
+  const configExisted = fs.existsSync(configPath);
+
+  if (authExisted) {
+    fs.copyFileSync(authPath, CODEX_RESET_AUTH_BACKUP);
+  }
+  if (configExisted) {
+    fs.copyFileSync(configPath, CODEX_RESET_CONFIG_BACKUP);
+  }
+
+  const rcContent = fs.existsSync(shellRcPath) ? fs.readFileSync(shellRcPath, 'utf-8') : '';
+  const meta = {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    authExisted,
+    configExisted,
+    shellRcPath,
+    originalExports: {
+      OPENAI_BASE_URL: extractShellExportLine(rcContent, 'OPENAI_BASE_URL'),
+      OPENAI_API_KEY: extractShellExportLine(rcContent, 'OPENAI_API_KEY')
+    }
+  };
+
+  fs.writeFileSync(CODEX_RESET_META_PATH, JSON.stringify(meta, null, 2) + '\n');
+}
+
+function syncCodexEnvToShell(baseUrl, apiKey, shellRcPath) {
+  const rcPath = shellRcPath || getPreferredShellRcPath();
+  const current = fs.existsSync(rcPath) ? fs.readFileSync(rcPath, 'utf-8') : '';
+
+  let next = current;
+  let changed = false;
+
+  const baseUrlResult = upsertShellExport(next, 'OPENAI_BASE_URL', baseUrl);
+  next = baseUrlResult.content;
+  changed = changed || baseUrlResult.changed;
+
+  const apiKeyResult = upsertShellExport(next, 'OPENAI_API_KEY', apiKey);
+  next = apiKeyResult.content;
+  changed = changed || apiKeyResult.changed;
+
+  if (changed) {
+    fs.writeFileSync(rcPath, next);
+  }
+
+  return { filePath: rcPath, changed };
+}
+
+function normalizeCodexAuthForApply(auth) {
+  if (!auth || typeof auth !== 'object' || Array.isArray(auth)) {
+    return auth;
+  }
+  const apiKey = typeof auth.OPENAI_API_KEY === 'string' ? auth.OPENAI_API_KEY : '';
+  if (apiKey) {
+    return { auth_mode: 'apikey', OPENAI_API_KEY: apiKey };
+  }
+  return auth;
 }
 
 function ensureCodexOpenAICompatConfig(configToml, baseUrl) {
@@ -571,6 +701,13 @@ export function applyCodexProfile(name) {
   const profile = readCodexProfile(name);
   if (!profile) return false;
 
+  const shellRcPath = getPreferredShellRcPath();
+  const baseUrl = extractBaseUrlFromConfigToml(profile.configToml);
+  const apiKey = profile.auth?.OPENAI_API_KEY || '';
+
+  // 首次 apply 时备份 ~/.codex 与 shell env 现场，供 resettodefault 回滚
+  ensureCodexResetBackup(shellRcPath);
+
   if (!fs.existsSync(CODEX_HOME_PATH)) {
     fs.mkdirSync(CODEX_HOME_PATH, { recursive: true });
   }
@@ -578,17 +715,75 @@ export function applyCodexProfile(name) {
   // 写入 auth.json
   fs.writeFileSync(
     path.join(CODEX_HOME_PATH, 'auth.json'),
-    JSON.stringify(profile.auth, null, 2) + '\n'
+    JSON.stringify(normalizeCodexAuthForApply(profile.auth), null, 2) + '\n'
   );
 
   // 写入 config.toml（如果有内容）
   if (profile.configToml && profile.configToml.trim()) {
-    const baseUrl = extractBaseUrlFromConfigToml(profile.configToml);
     const compatConfig = ensureCodexOpenAICompatConfig(profile.configToml, baseUrl);
     fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), compatConfig);
   }
 
-  return true;
+  const envSync = syncCodexEnvToShell(baseUrl, apiKey, shellRcPath);
+
+  return { success: true, envSync };
+}
+
+// 恢复 apply 前的 ~/.codex 配置，并移除/还原相关 OPENAI 环境变量
+export function resetCodexDefaultProfile() {
+  if (!fs.existsSync(CODEX_RESET_META_PATH)) {
+    return { success: false, reason: 'no_backup' };
+  }
+
+  let meta;
+  try {
+    meta = JSON.parse(fs.readFileSync(CODEX_RESET_META_PATH, 'utf-8'));
+  } catch {
+    return { success: false, reason: 'invalid_backup' };
+  }
+
+  if (!fs.existsSync(CODEX_HOME_PATH)) {
+    fs.mkdirSync(CODEX_HOME_PATH, { recursive: true });
+  }
+
+  const authPath = path.join(CODEX_HOME_PATH, 'auth.json');
+  const configPath = path.join(CODEX_HOME_PATH, 'config.toml');
+
+  if (meta.authExisted && fs.existsSync(CODEX_RESET_AUTH_BACKUP)) {
+    fs.copyFileSync(CODEX_RESET_AUTH_BACKUP, authPath);
+  } else if (fs.existsSync(authPath)) {
+    fs.unlinkSync(authPath);
+  }
+
+  if (meta.configExisted && fs.existsSync(CODEX_RESET_CONFIG_BACKUP)) {
+    fs.copyFileSync(CODEX_RESET_CONFIG_BACKUP, configPath);
+  } else if (fs.existsSync(configPath)) {
+    fs.unlinkSync(configPath);
+  }
+
+  const shellRcPath = meta.shellRcPath || getPreferredShellRcPath();
+  const rcExists = fs.existsSync(shellRcPath);
+  const rcBefore = rcExists ? fs.readFileSync(shellRcPath, 'utf-8') : '';
+  let rcAfter = rcBefore;
+
+  const originalBaseUrlLine = meta.originalExports?.OPENAI_BASE_URL || '';
+  const originalApiKeyLine = meta.originalExports?.OPENAI_API_KEY || '';
+
+  rcAfter = upsertShellExportLine(rcAfter, 'OPENAI_BASE_URL', originalBaseUrlLine).content;
+  rcAfter = upsertShellExportLine(rcAfter, 'OPENAI_API_KEY', originalApiKeyLine).content;
+
+  const envChanged = rcAfter !== rcBefore;
+  if (envChanged || (!rcExists && (originalBaseUrlLine || originalApiKeyLine))) {
+    fs.writeFileSync(shellRcPath, rcAfter);
+  }
+
+  fs.rmSync(CODEX_RESET_DIR, { recursive: true, force: true });
+
+  return {
+    success: true,
+    shellRcPath,
+    envChanged
+  };
 }
 
 // ============================================================

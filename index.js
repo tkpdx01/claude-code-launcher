@@ -17,6 +17,7 @@ import {
   deleteCommand,
   syncCommand,
   applyCommand,
+  resetToDefaultCommand,
   webdavCommand,
   helpCommand
 } from './src/commands/index.js';
@@ -27,7 +28,7 @@ const program = new Command();
 program
   .name('ccc')
   .description('Claude Code / Codex Settings Launcher - 管理多个 Claude Code 和 Codex 配置文件')
-  .version('1.6.0');
+  .version('1.6.6');
 
 // 注册所有命令
 listCommand(program);
@@ -38,6 +39,7 @@ editCommand(program);
 deleteCommand(program);
 syncCommand(program);
 applyCommand(program);
+resetToDefaultCommand(program);
 webdavCommand(program);
 helpCommand(program);
 
@@ -51,7 +53,7 @@ program
 
     if (profile) {
       // 检查是否是子命令
-      if (['list', 'ls', 'use', 'show', 'new', 'edit', 'delete', 'rm', 'sync', 'apply', 'webdav', 'help'].includes(profile)) {
+      if (['list', 'ls', 'use', 'show', 'new', 'edit', 'delete', 'rm', 'sync', 'apply', 'resettodefault', 'webdav', 'help'].includes(profile)) {
         return; // 让子命令处理
       }
 
