@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { createRequire } from 'module';
 import {
   getDefaultProfile,
   anyProfileExists,
@@ -22,13 +23,15 @@ import {
   helpCommand
 } from './src/commands/index.js';
 
+const require = createRequire(import.meta.url);
+const { version } = require('./package.json');
 const program = new Command();
 
 // 主程序
 program
   .name('ccc')
   .description('Claude Code / Codex Settings Launcher - 管理多个 Claude Code 和 Codex 配置文件')
-  .version('1.6.6');
+  .version(version);
 
 // 注册所有命令
 listCommand(program);
