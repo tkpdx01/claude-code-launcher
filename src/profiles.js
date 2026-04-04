@@ -95,6 +95,46 @@ export function getClaudeSettingsTemplate() {
   return null;
 }
 
+function cloneJsonValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function isClaudeModelOverrideEnvKey(key) {
+  return [
+    /^ANTHROPIC_DEFAULT_[A-Z0-9_]+_MODEL$/,
+    /^ANTHROPIC_MODEL$/,
+    /^ANTHROPIC_SMALL_FAST_MODEL(?:_[A-Z0-9_]+)?$/,
+    /^CLAUDE_CODE_SUBAGENT_MODEL$/
+  ].some(pattern => pattern.test(key));
+}
+
+function createClaudeProfileTemplate(template) {
+  const profileTemplate = (
+    template &&
+    typeof template === 'object' &&
+    !Array.isArray(template)
+  ) ? cloneJsonValue(template) : {};
+
+  // 保留顶层 model，但去掉会显式覆盖模型选择的 env 变量
+  if (profileTemplate.env && typeof profileTemplate.env === 'object' && !Array.isArray(profileTemplate.env)) {
+    profileTemplate.env = Object.fromEntries(
+      Object.entries(profileTemplate.env)
+        .filter(([key]) => !isClaudeModelOverrideEnvKey(key))
+    );
+  } else {
+    profileTemplate.env = {};
+  }
+
+  applyClaudeSettingsExtras(profileTemplate);
+
+  profileTemplate.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  profileTemplate.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
+  profileTemplate.env.DISABLE_INSTALLATION_CHECKS = '1';
+  profileTemplate.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
+
+  return profileTemplate;
+}
+
 function ensureClaudeEnvSettings(envUpdates) {
   const template = getClaudeSettingsTemplate();
   if (!template) {
@@ -244,19 +284,7 @@ export function saveProfile(name, settings) {
 export function createProfileFromTemplate(name, apiUrl, apiKey) {
   // 先确保主配置包含必要 env 设置（也会写回 ~/.claude/settings.json）
   const ensuredTemplate = ensureRequiredClaudeEnvSettings();
-  const template = ensuredTemplate || getClaudeSettingsTemplate() || {};
-  applyClaudeSettingsExtras(template);
-
-  // 确保 env 对象存在
-  if (!template.env) {
-    template.env = {};
-  }
-
-  // 确保 profile 也包含相同设置
-  template.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
-  template.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
-  template.env.DISABLE_INSTALLATION_CHECKS = '1';
-  template.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
+  const template = createClaudeProfileTemplate(ensuredTemplate || getClaudeSettingsTemplate() || {});
 
   // 只设置 API 凭证到 env
   template.env.ANTHROPIC_AUTH_TOKEN = apiKey;
@@ -273,7 +301,6 @@ export function syncProfileWithTemplate(name) {
   if (!template) {
     return null;
   }
-  applyClaudeSettingsExtras(template);
 
   const currentProfile = readProfile(name);
   if (!currentProfile) {
@@ -285,18 +312,9 @@ export function syncProfileWithTemplate(name) {
   const apiKey = currentEnv.ANTHROPIC_AUTH_TOKEN || currentProfile.ANTHROPIC_AUTH_TOKEN || '';
   const apiUrl = currentEnv.ANTHROPIC_BASE_URL || currentProfile.ANTHROPIC_BASE_URL || '';
 
-  // 复制主配置
-  const newProfile = { ...template };
-
-  // 确保 env 对象存在并保留 API 凭证
-  newProfile.env = { ...(template.env || {}), ANTHROPIC_AUTH_TOKEN: apiKey, ANTHROPIC_BASE_URL: apiUrl };
-
-  // 确保 profile 也包含相同设置
-  newProfile.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
-  newProfile.env.CLAUDE_CODE_ATTRIBUTION_HEADER = '0';
-  newProfile.env.DISABLE_INSTALLATION_CHECKS = '1';
-  newProfile.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
-  applyClaudeSettingsExtras(newProfile);
+  const newProfile = createClaudeProfileTemplate(template);
+  newProfile.env.ANTHROPIC_AUTH_TOKEN = apiKey;
+  newProfile.env.ANTHROPIC_BASE_URL = apiUrl;
 
   saveProfile(name, newProfile);
   return newProfile;

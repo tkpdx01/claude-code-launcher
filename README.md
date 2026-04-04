@@ -56,7 +56,7 @@ ccc webdav status    # Check sync status
 
 ### Claude Profiles
 
-Each profile is a copy of `~/.claude/settings.json` with its own API credentials. Launched via:
+Each profile inherits `~/.claude/settings.json`, keeps top-level `model`, strips model-override env vars, and writes its own API credentials. Launched via:
 
 ```
 claude --settings ~/.ccc/profiles/<name>.json
