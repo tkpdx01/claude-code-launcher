@@ -21,7 +21,9 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
     process.exit(1);
   }
 
-  const args = ['--settings', profilePath];
+  // Claude CLI 的 --settings 是“额外合并”而不是替换 user settings。
+  // 这里显式排除 user source，避免 ~/.claude/settings.json 再把模型/env 覆盖回来。
+  const args = ['--setting-sources', 'project,local', '--settings', profilePath];
   if (dangerouslySkipPermissions) {
     args.push('--dangerously-skip-permissions');
   }

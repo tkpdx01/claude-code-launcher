@@ -56,10 +56,10 @@ ccc webdav status    # Check sync status
 
 ### Claude Profiles
 
-Each profile inherits `~/.claude/settings.json`, keeps top-level `model`, strips model-override env vars, and writes its own API credentials. Launched via:
+Each profile inherits `~/.claude/settings.json`, keeps top-level `model`, strips model-override env vars, writes its own API credentials, and is launched without re-loading user settings from `~/.claude/settings.json`. Launched via:
 
 ```
-claude --settings ~/.ccc/profiles/<name>.json
+claude --setting-sources project,local --settings ~/.ccc/profiles/<name>.json
 ```
 
 ### Codex Profiles
