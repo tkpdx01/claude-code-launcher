@@ -52,7 +52,7 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
     process.exit(1);
   }
 
-  const { baseUrl } = getCodexProfileCredentials(profileName);
+  const { apiKey } = getCodexProfileCredentials(profileName);
 
   const args = [];
   if (dangerouslySkipPermissions) {
@@ -61,8 +61,12 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
 
   // 构建进程环境变量
   const env = { ...process.env, CODEX_HOME: codexHome };
-  if (baseUrl && baseUrl !== 'https://api.openai.com/v1') {
-    env.OPENAI_BASE_URL = baseUrl;
+  // `OPENAI_BASE_URL` 已废弃，优先使用 profile 内 config.toml 的 endpoint/provider 配置。
+  delete env.OPENAI_BASE_URL;
+  if (apiKey) {
+    env.OPENAI_API_KEY = apiKey;
+  } else {
+    delete env.OPENAI_API_KEY;
   }
 
   console.log(chalk.green(`启动 Codex，使用配置: ${profileName}`));

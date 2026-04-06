@@ -19,7 +19,7 @@ export function showHelp() {
   console.log(chalk.gray('    ccc sync [profile]     ') + '从模板同步配置（保留 API 凭证）');
   console.log(chalk.gray('    ccc sync --all         ') + '同步所有配置');
   console.log(chalk.gray('    ccc apply [profile]    ') + '将配置应用到默认目录（~/.claude 或 ~/.codex）');
-  console.log(chalk.gray('    ccc resettodefault     ') + '恢复 apply 前的 ~/.codex 配置并移除 OPENAI 环境变量');
+  console.log(chalk.gray('    ccc resettodefault     ') + '恢复 apply 前的 ~/.codex 配置并还原 OPENAI 环境变量变更');
   console.log(chalk.gray('    ccc edit [profile]     ') + '编辑配置');
   console.log(chalk.gray('    ccc delete, rm [name]  ') + '删除配置');
   console.log(chalk.gray('    ccc help               ') + '显示此帮助信息');

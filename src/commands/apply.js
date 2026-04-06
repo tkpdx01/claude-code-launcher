@@ -76,12 +76,18 @@ export function applyCommand(program) {
       if (success) {
         console.log(chalk.green(`\n✓ ${typeLabel} 配置 "${profileInfo.name}" 已应用到 ${targetDir}`));
 
-        if (profileInfo.type === 'codex' && result?.envSync?.filePath) {
+        if (profileInfo.type === 'codex' && result?.envSync?.changed && result?.envSync?.filePath) {
           const home = process.env.HOME || '';
           const rcPathDisplay = home && result.envSync.filePath.startsWith(home)
             ? `~${result.envSync.filePath.slice(home.length)}`
             : result.envSync.filePath;
-          console.log(chalk.gray(`  已同步 OPENAI_BASE_URL / OPENAI_API_KEY 到 ${rcPathDisplay}`));
+          if (result.envSync.removedDeprecatedBaseUrl && result.envSync.apiKeyChanged) {
+            console.log(chalk.gray(`  已从 ${rcPathDisplay} 清理 deprecated 的 OPENAI_BASE_URL，并同步 OPENAI_API_KEY`));
+          } else if (result.envSync.removedDeprecatedBaseUrl) {
+            console.log(chalk.gray(`  已从 ${rcPathDisplay} 清理 deprecated 的 OPENAI_BASE_URL`));
+          } else if (result.envSync.apiKeyChanged) {
+            console.log(chalk.gray(`  已同步 OPENAI_API_KEY 到 ${rcPathDisplay}`));
+          }
           console.log(chalk.gray(`  当前终端可执行: source ${rcPathDisplay}`));
         }
       } else {

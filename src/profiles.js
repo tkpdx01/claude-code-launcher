@@ -477,16 +477,20 @@ function ensureCodexResetBackup(shellRcPath) {
   fs.writeFileSync(CODEX_RESET_META_PATH, JSON.stringify(meta, null, 2) + '\n');
 }
 
-function syncCodexEnvToShell(baseUrl, apiKey, shellRcPath) {
+function syncCodexEnvToShell(apiKey, shellRcPath) {
   const rcPath = shellRcPath || getPreferredShellRcPath();
   const current = fs.existsSync(rcPath) ? fs.readFileSync(rcPath, 'utf-8') : '';
 
   let next = current;
   let changed = false;
+  let removedDeprecatedBaseUrl = false;
 
-  const baseUrlResult = upsertShellExport(next, 'OPENAI_BASE_URL', baseUrl);
-  next = baseUrlResult.content;
-  changed = changed || baseUrlResult.changed;
+  const withoutDeprecatedBaseUrl = stripShellExport(next, 'OPENAI_BASE_URL');
+  if (withoutDeprecatedBaseUrl !== next) {
+    next = withoutDeprecatedBaseUrl;
+    changed = true;
+    removedDeprecatedBaseUrl = true;
+  }
 
   const apiKeyResult = upsertShellExport(next, 'OPENAI_API_KEY', apiKey);
   next = apiKeyResult.content;
@@ -496,7 +500,12 @@ function syncCodexEnvToShell(baseUrl, apiKey, shellRcPath) {
     fs.writeFileSync(rcPath, next);
   }
 
-  return { filePath: rcPath, changed };
+  return {
+    filePath: rcPath,
+    changed,
+    removedDeprecatedBaseUrl,
+    apiKeyChanged: apiKeyResult.changed
+  };
 }
 
 function normalizeCodexAuthForApply(auth) {
@@ -742,7 +751,7 @@ export function applyCodexProfile(name) {
     fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), compatConfig);
   }
 
-  const envSync = syncCodexEnvToShell(baseUrl, apiKey, shellRcPath);
+  const envSync = syncCodexEnvToShell(apiKey, shellRcPath);
 
   return { success: true, envSync };
 }

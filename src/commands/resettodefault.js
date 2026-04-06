@@ -5,13 +5,13 @@ import { resetCodexDefaultProfile } from '../profiles.js';
 export function resetToDefaultCommand(program) {
   program
     .command('resettodefault')
-    .description('恢复 apply 前的 ~/.codex 配置，并移除 OPENAI 相关环境变量')
+    .description('恢复 apply 前的 ~/.codex 配置，并还原 OPENAI 相关环境变量变更')
     .action(async () => {
       const { confirm } = await inquirer.prompt([
         {
           type: 'confirm',
           name: 'confirm',
-          message: '恢复 ~/.codex 到 apply 前状态，并清理 OPENAI 环境变量？',
+          message: '恢复 ~/.codex 到 apply 前状态，并还原 OPENAI 环境变量变更？',
           default: false
         }
       ]);
@@ -37,6 +37,6 @@ export function resetToDefaultCommand(program) {
         : result.shellRcPath;
 
       console.log(chalk.green('✓ 已恢复 ~/.codex 原始配置'));
-      console.log(chalk.green(`✓ 已清理/还原 ${rcPathDisplay} 中的 OPENAI 环境变量`));
+      console.log(chalk.green(`✓ 已还原 ${rcPathDisplay} 中的 OPENAI 环境变量变更`));
     });
 }

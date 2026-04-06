@@ -70,8 +70,8 @@ Each profile is a directory containing `auth.json` + `config.toml`. Launched via
 CODEX_HOME=~/.ccc/codex-profiles/<name>/ codex
 ```
 
-`ccc <profile>` 启动仍是进程级环境变量，不污染全局。
-`ccc apply`（Codex）会同步 `OPENAI_BASE_URL` / `OPENAI_API_KEY` 到 shell rc，并可用 `ccc resettodefault` 回滚。
+`ccc <profile>` 启动仍是进程级环境变量，不污染全局；同时会屏蔽继承来的 deprecated `OPENAI_BASE_URL`。
+`ccc apply`（Codex）会把 endpoint/model 写入 `config.toml`，清理 shell rc 中旧的 `OPENAI_BASE_URL` 导出，并可用 `ccc resettodefault` 回滚。
 
 ### Storage
 
