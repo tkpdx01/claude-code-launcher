@@ -56,10 +56,10 @@ ccc webdav status    # Check sync status
 
 ### Claude Profiles
 
-Each profile inherits `~/.claude/settings.json`, keeps top-level `model`, strips model-override env vars, writes its own API credentials, and is launched without re-loading user settings from `~/.claude/settings.json`. Launched via:
+Each profile inherits `~/.claude/settings.json`, keeps top-level `model`, strips model-override env vars, and writes its own API credentials. Profile env vars (API key, base URL, etc.) are injected as process-level environment variables to guarantee highest precedence, while user-level settings (including `~/.claude/commands/` custom slash commands) remain accessible. Launched via:
 
 ```
-claude --setting-sources project,local --settings ~/.ccc/profiles/<name>.json
+claude --settings ~/.ccc/profiles/<name>.json
 ```
 
 ### Codex Profiles

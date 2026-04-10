@@ -8,7 +8,9 @@ import {
   codexProfileExists,
   getProfilePath,
   getCodexProfileDir,
-  getCodexProfileCredentials
+  getCodexProfileCredentials,
+  readProfile,
+  isClaudeModelOverrideEnvKey
 } from './profiles.js';
 
 // 启动 claude
@@ -21,9 +23,28 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
     process.exit(1);
   }
 
-  // Claude CLI 的 --settings 是“额外合并”而不是替换 user settings。
-  // 这里显式排除 user source，避免 ~/.claude/settings.json 再把模型/env 覆盖回来。
-  const args = ['--setting-sources', 'project,local', '--settings', profilePath];
+  // 读取 profile 获取 env 变量
+  const profile = readProfile(profileName);
+  const profileEnv = (profile && profile.env) || {};
+
+  // 将 profile env 注入子进程环境变量，确保 API 凭证优先于 ~/.claude/settings.json。
+  // 这样就不必排除 user setting source，~/.claude/commands/ 也能正常加载。
+  const childEnv = { ...process.env };
+  for (const [key, value] of Object.entries(profileEnv)) {
+    childEnv[key] = value;
+  }
+
+  // 删除不在 profile 中的模型覆盖环境变量
+  // （profile 模板已刻意移除这些变量，避免从 shell 环境或 user settings 继承）
+  for (const key of Object.keys(childEnv)) {
+    if (isClaudeModelOverrideEnvKey(key) && !(key in profileEnv)) {
+      delete childEnv[key];
+    }
+  }
+
+  // 使用默认 setting-sources（包含 user），让 ~/.claude/commands/ 能被加载。
+  // profile env 通过进程环境变量注入，优先级高于 settings.json 的 env 设定。
+  const args = ['--settings', profilePath];
   if (dangerouslySkipPermissions) {
     args.push('--dangerously-skip-permissions');
   }
@@ -33,7 +54,8 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
 
   const child = spawn('claude', args, {
     stdio: 'inherit',
-    shell: true
+    shell: true,
+    env: childEnv
   });
 
   child.on('error', (err) => {

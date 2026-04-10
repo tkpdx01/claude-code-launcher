@@ -99,7 +99,7 @@ function cloneJsonValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function isClaudeModelOverrideEnvKey(key) {
+export function isClaudeModelOverrideEnvKey(key) {
   return [
     /^ANTHROPIC_DEFAULT_[A-Z0-9_]+_MODEL$/,
     /^ANTHROPIC_MODEL$/,
