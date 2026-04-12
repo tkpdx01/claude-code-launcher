@@ -1,16 +1,17 @@
 import * as store from '../store.js';
+import { t } from '../i18n.js';
 import { select } from '../prompt.js';
-import { cyan, green, gray, red, yellow, white, blue, magenta, bold } from '../color.js';
+import { cyan, gray, red, yellow, white, blue, magenta, bold } from '../color.js';
 
 function maskKey(key) {
-  if (!key) return 'not set';
+  if (!key) return t('common.not_set');
   return key.substring(0, 15) + '...';
 }
 
 export async function showCommand(args) {
   const all = store.getAllProfiles();
   if (all.length === 0) {
-    console.log(yellow('No profiles available'));
+    console.log(yellow(t('common.no_profiles')));
     process.exit(0);
   }
 
@@ -21,11 +22,11 @@ export async function showCommand(args) {
       const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
       return { name: `${tag} ${p.name}`, value: p };
     });
-    profileInfo = await select('Select profile to view:', choices);
+    profileInfo = await select(t('pick.show'), choices);
   } else {
     profileInfo = store.resolveProfile(args[0]);
     if (!profileInfo) {
-      console.log(red(`Profile "${args[0]}" does not exist`));
+      console.log(red(t('common.not_exist', { name: args[0] })));
       process.exit(1);
     }
   }
@@ -38,7 +39,7 @@ export async function showCommand(args) {
     console.log(gray(`  Path: ${store.getCodexProfileDir(profileInfo.name)}\n`));
     console.log(`  ${cyan('OPENAI_API_KEY')}: ${yellow(maskKey(apiKey))}`);
     console.log(`  ${cyan('Base URL')}: ${white(baseUrl)}`);
-    console.log(`  ${cyan('Model')}: ${white(model || '(default)')}`);
+    console.log(`  ${cyan('Model')}: ${white(model || t('common.default'))}`);
 
     if (profile?.configToml) {
       console.log(`\n  ${cyan('config.toml')}:`);
@@ -52,18 +53,18 @@ export async function showCommand(args) {
 
     console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${magenta('[Claude]')}`);
     console.log();
-    console.log(`  ${cyan('ANTHROPIC_BASE_URL')}: ${white(apiUrl || 'not set')}`);
+    console.log(`  ${cyan('ANTHROPIC_BASE_URL')}: ${white(apiUrl || t('common.not_set'))}`);
     console.log(`  ${cyan('ANTHROPIC_AUTH_TOKEN')}: ${yellow(maskKey(apiKey))}`);
 
     if (profile?.env && Object.keys(profile.env).length > 0) {
-      console.log(`\n  ${cyan('Extra env')}:`);
+      console.log(`\n  ${cyan(t('show.extra_env'))}:`);
       for (const [k, v] of Object.entries(profile.env)) {
         console.log(`    ${gray(k)}: ${gray(v)}`);
       }
     }
 
     if (profile?.settings && Object.keys(profile.settings).length > 0) {
-      console.log(`\n  ${cyan('Settings overrides')}:`);
+      console.log(`\n  ${cyan(t('show.settings_overrides'))}:`);
       console.log(`    ${gray(JSON.stringify(profile.settings, null, 2).split('\n').join('\n    '))}`);
     }
   }

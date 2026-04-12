@@ -1,11 +1,12 @@
 import * as store from '../store.js';
+import { t } from '../i18n.js';
 import { confirm, select } from '../prompt.js';
 import { green, red, yellow, blue, magenta } from '../color.js';
 
 export async function deleteCommand(args) {
   const all = store.getAllProfiles();
   if (all.length === 0) {
-    console.log(yellow('No profiles available'));
+    console.log(yellow(t('common.no_profiles')));
     process.exit(0);
   }
 
@@ -16,19 +17,19 @@ export async function deleteCommand(args) {
       const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
       return { name: `${tag} ${p.name}`, value: p };
     });
-    profileInfo = await select('Select profile to delete:', choices);
+    profileInfo = await select(t('pick.delete'), choices);
   } else {
     profileInfo = store.resolveProfile(args[0]);
     if (!profileInfo) {
-      console.log(red(`Profile "${args[0]}" does not exist`));
+      console.log(red(t('common.not_exist', { name: args[0] })));
       process.exit(1);
     }
   }
 
   const typeLabel = profileInfo.type === 'codex' ? 'Codex' : 'Claude';
-  const ok = await confirm(`Delete ${typeLabel} profile "${profileInfo.name}"?`, false);
+  const ok = await confirm(t('delete.confirm', { type: typeLabel, name: profileInfo.name }), false);
   if (!ok) {
-    console.log(yellow('Cancelled'));
+    console.log(yellow(t('common.cancelled')));
     process.exit(0);
   }
 
@@ -38,5 +39,5 @@ export async function deleteCommand(args) {
     store.deleteClaudeProfile(profileInfo.name);
   }
 
-  console.log(green(`Deleted ${typeLabel} profile "${profileInfo.name}"`));
+  console.log(green(t('delete.done', { type: typeLabel, name: profileInfo.name })));
 }

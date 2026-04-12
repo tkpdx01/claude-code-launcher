@@ -1,6 +1,7 @@
 // Codex model list fetcher — zero dependencies
 
 import { input, select } from './prompt.js';
+import { t } from './i18n.js';
 import { gray, yellow } from './color.js';
 
 const REQUEST_TIMEOUT_MS = 8000;
@@ -55,19 +56,19 @@ export async function promptCodexModel(baseUrl, apiKey, currentModel = '') {
   const current = (currentModel || '').trim();
 
   if (!(apiKey || '').trim()) {
-    return input('Model (leave empty for default):', current);
+    return input(t('models.prompt'), current);
   }
 
-  console.log(gray('Fetching model list...'));
+  console.log(gray(t('models.fetching')));
 
   try {
     const modelIds = await fetchModelIds(baseUrl, apiKey);
     if (modelIds.length === 0) throw new Error('Empty model list');
 
     const choices = [
-      { name: '(default model)', value: '' },
+      { name: t('models.default'), value: '' },
       ...modelIds.map((id) => ({ name: id, value: id })),
-      { name: 'Enter model ID manually', value: '__manual__' },
+      { name: t('models.manual'), value: '__manual__' },
     ];
 
     let defaultIndex = 0;
@@ -76,12 +77,12 @@ export async function promptCodexModel(baseUrl, apiKey, currentModel = '') {
       if (idx >= 0) defaultIndex = idx;
     }
 
-    const value = await select('Select model:', choices, defaultIndex);
+    const value = await select(t('models.select'), choices, defaultIndex);
     if (value !== '__manual__') return value;
   } catch (err) {
     const reason = err?.name === 'AbortError' ? 'timeout' : (err?.message || 'unknown');
-    console.log(yellow(`Failed to fetch models, manual input (${reason})`));
+    console.log(yellow(t('models.failed', { reason })));
   }
 
-  return input('Model (leave empty for default):', current);
+  return input(t('models.prompt'), current);
 }

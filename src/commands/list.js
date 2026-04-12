@@ -1,12 +1,13 @@
 import * as store from '../store.js';
+import { t } from '../i18n.js';
 import { cyan, gray, blue, magenta, yellow } from '../color.js';
 
 export function listCommand() {
   const all = store.getAllProfiles();
 
   if (all.length === 0) {
-    console.log(yellow('No profiles available'));
-    console.log(gray('Use "ccc new" to create one'));
+    console.log(yellow(t('common.no_profiles')));
+    console.log(gray(t('common.no_profiles_hint')));
     return;
   }
 
@@ -14,9 +15,9 @@ export function listCommand() {
     const num = String(i + 1);
     let url;
     if (p.type === 'codex') {
-      url = store.getCodexCredentials(p.name).baseUrl || gray('(not set)');
+      url = store.getCodexCredentials(p.name).baseUrl || gray(t('common.not_set'));
     } else {
-      url = store.getClaudeCredentials(p.name).apiUrl || gray('(not set)');
+      url = store.getClaudeCredentials(p.name).apiUrl || gray(t('common.not_set'));
     }
     return { num, name: p.name, url, rawType: p.type };
   });
@@ -37,5 +38,5 @@ export function listCommand() {
     console.log(`  ${num}  ${type}  ${r.name.padEnd(w2)}  ${r.url}`);
   }
 
-  console.log(gray(`\n  ${all.length} profiles, launch: ccc <name> or ccc <number>\n`));
+  console.log(gray(`\n  ${t('list.footer', { count: all.length })}\n`));
 }

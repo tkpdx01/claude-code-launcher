@@ -8,6 +8,7 @@ import { CLAUDE_SETTINGS_PATH, TMP_DIR } from './config.js';
 import { buildClaudeEnv, isModelOverrideKey } from './env.js';
 import * as store from './store.js';
 import { green, gray, red } from './color.js';
+import { t } from './i18n.js';
 
 // Read ~/.claude/settings.json (read-only, never write)
 function readMainSettings() {
@@ -65,7 +66,7 @@ function writeTempSettings(profileName, settings) {
 export function launchClaude(profileName, dangerouslySkipPermissions = false) {
   const profile = store.readClaudeProfile(profileName);
   if (!profile) {
-    console.log(red(`Profile "${profileName}" does not exist`));
+    console.log(red(t('common.not_exist', { name: profileName })));
     process.exit(1);
   }
 
@@ -134,8 +135,8 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
   const args = ['--settings', tmpPath];
   if (dangerouslySkipPermissions) args.push('--dangerously-skip-permissions');
 
-  console.log(green(`Launch Claude Code with profile: ${profileName}`));
-  console.log(gray(`Command: claude ${args.join(' ')}`));
+  console.log(green(t('launch.claude', { name: profileName })));
+  console.log(gray(t('launch.cmd_claude', { args: args.join(' ') })));
 
   const child = spawn('claude', args, {
     stdio: 'inherit',
@@ -144,7 +145,7 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
 
   child.on('close', (code) => process.exit(code ?? 0));
   child.on('error', (err) => {
-    console.log(red(`Launch failed: ${err.message}`));
+    console.log(red(t('launch.failed', { msg: err.message })));
     process.exit(1);
   });
   for (const sig of ['SIGTERM', 'SIGHUP']) {

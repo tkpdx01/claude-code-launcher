@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 import * as store from './store.js';
 import { buildCodexEnv } from './env.js';
 import { green, gray, red, yellow } from './color.js';
+import { t } from './i18n.js';
 
 // Codex v0.120+ forbids overriding reserved provider names (openai, ollama, lmstudio).
 // Auto-fix old profiles that used [model_providers.openai].
@@ -46,14 +47,14 @@ function fixReservedProviderName(codexHome) {
   }
 
   fs.writeFileSync(configPath, toml);
-  console.log(yellow('Auto-fixed config.toml: renamed reserved provider "openai" → "ccc_openai"'));
+  console.log(yellow(t('launch.fix_provider')));
 }
 
 export function launchCodex(profileName, dangerouslySkipPermissions = false) {
   const codexHome = store.getCodexProfileDir(profileName);
 
   if (!store.codexProfileExists(profileName)) {
-    console.log(red(`Profile "${profileName}" does not exist`));
+    console.log(red(t('common.not_exist', { name: profileName })));
     process.exit(1);
   }
 
@@ -71,8 +72,8 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
   const args = [];
   if (dangerouslySkipPermissions) args.push('--full-auto');
 
-  console.log(green(`Launch Codex with profile: ${profileName}`));
-  console.log(gray(`CODEX_HOME=${codexHome} codex ${args.join(' ')}`));
+  console.log(green(t('launch.codex', { name: profileName })));
+  console.log(gray(t('launch.cmd_codex', { home: codexHome, args: args.join(' ') })));
 
   const child = spawn('codex', args, {
     stdio: 'inherit',
@@ -81,7 +82,7 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
 
   child.on('close', (code) => process.exit(code ?? 0));
   child.on('error', (err) => {
-    console.log(red(`Launch failed: ${err.message}`));
+    console.log(red(t('launch.failed', { msg: err.message })));
     process.exit(1);
   });
   for (const sig of ['SIGTERM', 'SIGHUP']) {
