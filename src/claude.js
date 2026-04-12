@@ -98,6 +98,13 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
     if (isModelOverrideKey(key)) delete merged.env[key];
   }
 
+  // Strip inherited model from main config — different endpoints support different
+  // models, inheriting the main config's model almost always causes errors.
+  // Users can explicitly set model via profile.settings.model if needed.
+  if (!profile.settings?.model) {
+    delete merged.model;
+  }
+
   // 4. Runtime ccline detection — only if user hasn't set statusLine
   if (!merged.statusLine) {
     const ccline = detectCcline();
