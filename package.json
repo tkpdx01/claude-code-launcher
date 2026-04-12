@@ -1,15 +1,14 @@
 {
   "name": "@tkpdx01/ccc",
-  "version": "1.6.11",
-  "description": "Claude Code / Codex Settings Launcher - Manage multiple Claude Code and Codex profiles",
+  "version": "2.0.1",
+  "description": "Claude Code / Codex Settings Launcher - Manage multiple profiles with zero dependencies",
   "main": "index.js",
   "bin": {
     "ccc": "./index.js"
   },
   "type": "module",
   "scripts": {
-    "test": "node index.js --help",
-    "postinstall": "node postinstall.js"
+    "test": "node index.js help"
   },
   "keywords": [
     "claude",
@@ -31,12 +30,5 @@
   "bugs": {
     "url": "https://github.com/tkpdx01/claude-code-launcher/issues"
   },
-  "homepage": "https://github.com/tkpdx01/claude-code-launcher#readme",
-  "dependencies": {
-    "chalk": "^5.3.0",
-    "cli-table3": "^0.6.5",
-    "commander": "^12.0.0",
-    "inquirer": "^9.2.0",
-    "webdav": "^5.8.0"
-  }
+  "homepage": "https://github.com/tkpdx01/claude-code-launcher#readme"
 }

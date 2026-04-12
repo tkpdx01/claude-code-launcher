@@ -1,63 +1,41 @@
-import chalk from 'chalk';
+import { cyan, yellow, gray, white, dim, bold } from '../color.js';
 
-export function showHelp() {
-  console.log(chalk.cyan.bold('\n  CCC - Claude Code / Codex Settings Launcher\n'));
-  console.log(chalk.white('  管理多个 Claude Code 和 OpenAI Codex 配置文件，快速切换不同的 API 设置\n'));
+export function helpCommand() {
+  console.log(bold(cyan('\n  CCC - Claude Code / Codex Settings Launcher\n')));
+  console.log(white('  Manage multiple Claude Code and Codex profiles, switch API configs instantly\n'));
 
-  console.log(chalk.yellow('  启动命令:'));
-  console.log(chalk.gray('    ccc                    ') + '使用默认配置启动，无默认则交互选择');
-  console.log(chalk.gray('    ccc <profile>          ') + '使用指定配置启动（支持名称或序号，自动识别类型）');
-  console.log(chalk.gray('    ccc <序号>             ') + '使用序号启动（如 ccc 1）');
-  console.log(chalk.gray('    ccc -d, --ddd          ') + 'Claude: --dangerously-skip-permissions / Codex: --full-auto');
+  console.log(yellow('  Launch:'));
+  console.log(gray('    ccc                    ') + 'Launch default profile, or select interactively');
+  console.log(gray('    ccc <profile>          ') + 'Launch by name or number (auto-detect type)');
+  console.log(gray('    ccc <number>           ') + 'Launch by index (e.g. ccc 1)');
+  console.log(gray('    ccc -d, --ddd          ') + 'Claude: --dangerously-skip-permissions / Codex: --full-auto');
   console.log();
 
-  console.log(chalk.yellow('  管理命令:'));
-  console.log(chalk.gray('    ccc list, ls           ') + '列出所有配置（Claude + Codex 混合，带序号）');
-  console.log(chalk.gray('    ccc show [profile]     ') + '显示完整配置');
-  console.log(chalk.gray('    ccc use <profile>      ') + '设置默认配置');
-  console.log(chalk.gray('    ccc new [name]         ') + '创建新配置（可选 Claude 或 Codex）');
-  console.log(chalk.gray('    ccc sync [profile]     ') + '从模板同步配置（保留 API 凭证）');
-  console.log(chalk.gray('    ccc sync --all         ') + '同步所有配置');
-  console.log(chalk.gray('    ccc apply [profile]    ') + '将配置应用到默认目录（~/.claude 或 ~/.codex）');
-  console.log(chalk.gray('    ccc resettodefault     ') + '恢复 apply 前的 ~/.codex 配置并还原 OPENAI 环境变量变更');
-  console.log(chalk.gray('    ccc edit [profile]     ') + '编辑配置');
-  console.log(chalk.gray('    ccc delete, rm [name]  ') + '删除配置');
-  console.log(chalk.gray('    ccc help               ') + '显示此帮助信息');
+  console.log(yellow('  Manage:'));
+  console.log(gray('    ccc list, ls           ') + 'List all profiles (Claude + Codex, with index)');
+  console.log(gray('    ccc show [profile]     ') + 'Show profile details');
+  console.log(gray('    ccc use <profile>      ') + 'Set default profile');
+  console.log(gray('    ccc new [name]         ') + 'Create new profile (Claude or Codex)');
+  console.log(gray('    ccc edit [profile]     ') + 'Edit profile credentials');
+  console.log(gray('    ccc delete, rm [name]  ') + 'Delete profile');
+  console.log(gray('    ccc help               ') + 'Show this help');
   console.log();
 
-  console.log(chalk.yellow('  云同步命令:'));
-  console.log(chalk.gray('    ccc webdav setup       ') + '配置 WebDAV 连接和同步密码');
-  console.log(chalk.gray('    ccc webdav push        ') + '推送到云端（加密）');
-  console.log(chalk.gray('    ccc webdav pull        ') + '从云端拉取（解密）');
-  console.log(chalk.gray('    ccc webdav status      ') + '查看同步状态');
+  console.log(yellow('  Storage:'));
+  console.log(gray('    ~/.ccc/profiles/       ') + 'Claude profiles (credentials only)');
+  console.log(gray('    ~/.ccc/codex-profiles/ ') + 'Codex profiles (auth.json + config.toml)');
+  console.log(gray('    ~/.ccc/tmp/            ') + 'Temp merged settings (auto-generated at launch)');
   console.log();
 
-  console.log(chalk.yellow('  配置存储:'));
-  console.log(chalk.gray('    ~/.ccc/profiles/       ') + 'Claude 影子配置文件目录');
-  console.log(chalk.gray('    ~/.ccc/codex-profiles/ ') + 'Codex 配置目录（auth.json + config.toml）');
-  console.log(chalk.gray('    ~/.ccc/webdav.json     ') + 'WebDAV 连接配置');
-  console.log(chalk.gray('    ~/.ccc/.sync_key       ') + '本地密码缓存（机器指纹加密）');
+  console.log(yellow('  How it works:'));
+  console.log(dim('    Profiles store only API credentials. At launch time, ccc reads'));
+  console.log(dim('    ~/.claude/settings.json (read-only), merges credentials, writes'));
+  console.log(dim('    a temp file, and spawns claude/codex. No global config is modified.'));
   console.log();
 
-  console.log(chalk.yellow('  创建配置:'));
-  console.log(chalk.gray('    ccc new                ') + '交互式创建，选择 Claude 或 Codex 类型');
-  console.log(chalk.gray('    ccc new myprofile      ') + '指定名称创建，随后选择类型并填写凭证');
-  console.log(chalk.gray('    ') + chalk.dim('Claude 需要: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN'));
-  console.log(chalk.gray('    ') + chalk.dim('Codex  需要: Base URL + OPENAI_API_KEY + Model（可从接口拉取后选择）'));
+  console.log(yellow('  Examples:'));
+  console.log(gray('    ccc ls                 ') + 'List profiles with index numbers');
+  console.log(gray('    ccc 3                  ') + 'Launch profile #3');
+  console.log(gray('    ccc 3 -d               ') + 'Launch profile #3 with skip-permissions/full-auto');
   console.log();
-
-  console.log(chalk.yellow('  示例:'));
-  console.log(chalk.gray('    ccc ls                 ') + '查看配置列表和序号');
-  console.log(chalk.gray('    ccc 3                  ') + '启动第 3 个配置（自动识别 Claude/Codex）');
-  console.log(chalk.gray('    ccc 3 -d               ') + '启动第 3 个配置 + 跳过权限/全自动');
-  console.log(chalk.gray('    ccc apply myprofile    ') + '将 myprofile 的配置应用到默认目录');
-  console.log(chalk.gray('    ccc webdav push        ') + '推送配置到云端');
-  console.log();
-}
-
-export function helpCommand(program) {
-  program
-    .command('help')
-    .description('显示帮助信息')
-    .action(showHelp);
 }

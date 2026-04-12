@@ -1,234 +1,100 @@
-import chalk from 'chalk';
-import inquirer from 'inquirer';
-import {
-  ensureDirs,
-  getAllProfiles,
-  anyProfileExists,
-  createProfileFromTemplate,
-  createCodexProfile,
-  setDefaultProfile,
-  ensureClaudeSettingsExtras
-} from '../profiles.js';
-import { launchClaude, launchCodex } from '../launch.js';
-import { promptCodexModel } from '../codex-models.js';
+import * as store from '../store.js';
+import { input, confirm, select } from '../prompt.js';
+import { promptCodexModel } from '../models.js';
+import { green, red, yellow, blue, magenta } from '../color.js';
+import { launchClaude } from '../claude.js';
+import { launchCodex } from '../codex.js';
 
-const RESERVED_PROFILE_NAMES = [
-  'list',
-  'ls',
-  'use',
-  'show',
-  'import',
-  'if',
-  'new',
-  'edit',
-  'delete',
-  'rm',
-  'sync',
-  'apply',
-  'resettodefault',
-  'webdav',
-  'help'
-];
+const RESERVED = new Set([
+  'list', 'ls', 'use', 'show', 'new', 'edit', 'delete', 'rm', 'help',
+]);
 
-function isReservedProfileName(name) {
-  return RESERVED_PROFILE_NAMES.includes(name);
-}
-
-function validateProfileName(input) {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return '请输入配置名称';
-  }
-  if (isReservedProfileName(trimmed)) {
-    return '配置名称不能使用命令关键词';
-  }
+function validateName(name) {
+  if (!name.trim()) return 'Name cannot be empty';
+  if (RESERVED.has(name.trim())) return 'Name conflicts with a command keyword';
   return true;
 }
 
-export function newCommand(program) {
-  program
-    .command('new [name]')
-    .description('创建新的配置（Claude 或 Codex）')
-    .action(async (name) => {
-      // 选择 profile 类型
-      const { profileType } = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'profileType',
-          message: '配置类型:',
-          choices: [
-            { name: `${chalk.magenta('[Claude]')} Claude Code`, value: 'claude' },
-            { name: `${chalk.blue('[Codex]')}  OpenAI Codex`, value: 'codex' }
-          ]
-        }
-      ]);
+export async function newCommand(args) {
+  let name = args[0] || '';
 
-      // 如果没有提供名称，询问
-      if (!name) {
-        const { profileName } = await inquirer.prompt([
-          {
-            type: 'input',
-            name: 'profileName',
-            message: '配置名称:',
-            validate: validateProfileName
-          }
-        ]);
-        name = profileName;
-      } else {
-        const validationResult = validateProfileName(name);
-        if (validationResult !== true) {
-          console.log(chalk.red(validationResult));
-          process.exit(1);
-        }
+  // Choose type
+  const profileType = await select('Profile type:', [
+    { name: `${magenta('[Claude]')} Claude Code`, value: 'claude' },
+    { name: `${blue('[Codex]')}  OpenAI Codex`, value: 'codex' },
+  ]);
+
+  // Get name
+  if (!name) {
+    name = await input('Profile name:');
+  }
+  const v = validateName(name);
+  if (v !== true) {
+    console.log(red(v));
+    process.exit(1);
+  }
+
+  // Check existing
+  const existing = store.anyProfileExists(name);
+  if (existing.exists) {
+    const typeLabel = existing.type === 'codex' ? 'Codex' : 'Claude';
+    const overwrite = await confirm(`Profile "${name}" already exists (${typeLabel}), overwrite?`, false);
+    if (!overwrite) {
+      console.log(yellow('Cancelled'));
+      process.exit(0);
+    }
+  }
+
+  if (profileType === 'codex') {
+    const baseUrl = await input('Base URL:', 'https://api.openai.com/v1');
+    const apiKey = await input('OPENAI_API_KEY:');
+    const finalName = await input('Profile name:', name);
+    const model = await promptCodexModel(baseUrl, apiKey, '');
+
+    if (finalName !== name) {
+      const check = store.anyProfileExists(finalName);
+      if (check.exists) {
+        const ow = await confirm(`Profile "${finalName}" already exists, overwrite?`, false);
+        if (!ow) { console.log(yellow('Cancelled')); process.exit(0); }
       }
+    }
 
-      // 检查是否已存在（跨类型检查）
-      const existing = anyProfileExists(name);
-      if (existing.exists) {
-        const existingType = existing.type === 'codex' ? 'Codex' : 'Claude';
-        const { overwrite } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'overwrite',
-            message: `配置 "${name}" 已存在（${existingType} 类型），是否覆盖?`,
-            default: false
-          }
-        ]);
-        if (!overwrite) {
-          console.log(chalk.yellow('已取消'));
-          process.exit(0);
-        }
+    store.ensureDirs();
+    store.createCodexProfile(finalName, apiKey, baseUrl, model);
+    console.log(green(`\nCreated Codex profile "${finalName}"`));
+
+    if (store.getAllProfiles().length === 1) {
+      store.setDefault(finalName);
+      console.log(green('Set as default'));
+    }
+
+    if (await confirm('Launch Codex now?', false)) {
+      launchCodex(finalName);
+    }
+  } else {
+    const apiUrl = await input('ANTHROPIC_BASE_URL:', 'https://api.anthropic.com');
+    const apiKey = await input('ANTHROPIC_AUTH_TOKEN:');
+    const finalName = await input('Profile name:', name);
+
+    if (finalName !== name) {
+      const check = store.anyProfileExists(finalName);
+      if (check.exists) {
+        const ow = await confirm(`Profile "${finalName}" already exists, overwrite?`, false);
+        if (!ow) { console.log(yellow('Cancelled')); process.exit(0); }
       }
+    }
 
-      if (profileType === 'codex') {
-        // Codex profile 创建
-        const answers = await inquirer.prompt([
-          {
-            type: 'input',
-            name: 'baseUrl',
-            message: 'Base URL:',
-            default: 'https://api.openai.com/v1'
-          },
-          {
-            type: 'input',
-            name: 'apiKey',
-            message: 'OPENAI_API_KEY:',
-            default: ''
-          },
-          {
-            type: 'input',
-            name: 'finalName',
-            message: 'Profile 名称:',
-            default: name,
-            validate: validateProfileName
-          }
-        ]);
-        const model = await promptCodexModel(answers.baseUrl, answers.apiKey, '');
+    store.ensureDirs();
+    store.saveClaudeProfile(finalName, { apiUrl, apiKey });
+    console.log(green(`\nCreated Claude profile "${finalName}"`));
 
-        const finalName = answers.finalName;
-        if (finalName !== name) {
-          const check = anyProfileExists(finalName);
-          if (check.exists) {
-            const { overwriteNew } = await inquirer.prompt([
-              {
-                type: 'confirm',
-                name: 'overwriteNew',
-                message: `配置 "${finalName}" 已存在，是否覆盖?`,
-                default: false
-              }
-            ]);
-            if (!overwriteNew) {
-              console.log(chalk.yellow('已取消'));
-              process.exit(0);
-            }
-          }
-        }
+    if (store.getAllProfiles().length === 1) {
+      store.setDefault(finalName);
+      console.log(green('Set as default'));
+    }
 
-        ensureDirs();
-        createCodexProfile(finalName, answers.apiKey, answers.baseUrl, model);
-        console.log(chalk.green(`\n✓ Codex 配置 "${finalName}" 已创建`));
-
-        const allProfiles = getAllProfiles();
-        if (allProfiles.length === 1) {
-          setDefaultProfile(finalName);
-          console.log(chalk.green(`✓ 已设为默认配置`));
-        }
-
-        const { useNow } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'useNow',
-            message: '是否立即启动 Codex?',
-            default: false
-          }
-        ]);
-        if (useNow) {
-          launchCodex(finalName);
-        }
-      } else {
-        // Claude profile 创建（保持原逻辑）
-        const { apiUrl, apiKey, finalName } = await inquirer.prompt([
-          {
-            type: 'input',
-            name: 'apiUrl',
-            message: 'ANTHROPIC_BASE_URL:',
-            default: 'https://api.anthropic.com'
-          },
-          {
-            type: 'input',
-            name: 'apiKey',
-            message: 'ANTHROPIC_AUTH_TOKEN:',
-            default: ''
-          },
-          {
-            type: 'input',
-            name: 'finalName',
-            message: 'Profile 名称:',
-            default: name,
-            validate: validateProfileName
-          }
-        ]);
-
-        if (finalName !== name) {
-          const check = anyProfileExists(finalName);
-          if (check.exists) {
-            const { overwriteNew } = await inquirer.prompt([
-              {
-                type: 'confirm',
-                name: 'overwriteNew',
-                message: `配置 "${finalName}" 已存在，是否覆盖?`,
-                default: false
-              }
-            ]);
-            if (!overwriteNew) {
-              console.log(chalk.yellow('已取消'));
-              process.exit(0);
-            }
-          }
-        }
-
-        ensureDirs();
-        ensureClaudeSettingsExtras();
-        createProfileFromTemplate(finalName, apiUrl, apiKey);
-        console.log(chalk.green(`\n✓ Claude 配置 "${finalName}" 已创建（基于 ~/.claude/settings.json）`));
-
-        const allProfiles = getAllProfiles();
-        if (allProfiles.length === 1) {
-          setDefaultProfile(finalName);
-          console.log(chalk.green(`✓ 已设为默认配置`));
-        }
-
-        const { useNow } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'useNow',
-            message: '是否立即启动 Claude?',
-            default: false
-          }
-        ]);
-        if (useNow) {
-          launchClaude(finalName);
-        }
-      }
-    });
+    if (await confirm('Launch Claude now?', false)) {
+      launchClaude(finalName);
+    }
+  }
 }

@@ -1,78 +1,44 @@
-import chalk from 'chalk';
-import inquirer from 'inquirer';
-import {
-  getAllProfiles,
-  getDefaultProfile,
-  resolveAnyProfile,
-  deleteProfile,
-  deleteCodexProfile,
-  clearDefaultProfile
-} from '../profiles.js';
+import * as store from '../store.js';
+import { confirm, select } from '../prompt.js';
+import { green, red, yellow, blue, magenta } from '../color.js';
 
-export function deleteCommand(program) {
-  program
-    .command('delete [profile]')
-    .alias('rm')
-    .description('删除 profile')
-    .action(async (profile) => {
-      const allProfiles = getAllProfiles();
+export async function deleteCommand(args) {
+  const all = store.getAllProfiles();
+  if (all.length === 0) {
+    console.log(yellow('No profiles available'));
+    process.exit(0);
+  }
 
-      if (allProfiles.length === 0) {
-        console.log(chalk.yellow('没有可用的 profiles'));
-        process.exit(0);
-      }
+  let profileInfo;
 
-      let profileInfo;
-
-      if (!profile) {
-        const choices = allProfiles.map(p => {
-          const typeTag = p.type === 'codex' ? chalk.blue('[Codex]') : chalk.magenta('[Claude]');
-          return { name: `${typeTag} ${p.name}`, value: p };
-        });
-
-        const { selected } = await inquirer.prompt([
-          {
-            type: 'list',
-            name: 'selected',
-            message: '选择要删除的配置:',
-            choices
-          }
-        ]);
-        profileInfo = selected;
-      } else {
-        profileInfo = resolveAnyProfile(profile);
-        if (!profileInfo) {
-          console.log(chalk.red(`Profile "${profile}" 不存在`));
-          process.exit(1);
-        }
-      }
-
-      const typeLabel = profileInfo.type === 'codex' ? 'Codex' : 'Claude';
-
-      const { confirm } = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'confirm',
-          message: `确定要删除 ${typeLabel} 配置 "${profileInfo.name}" 吗?`,
-          default: false
-        }
-      ]);
-
-      if (!confirm) {
-        console.log(chalk.yellow('已取消'));
-        process.exit(0);
-      }
-
-      if (profileInfo.type === 'codex') {
-        deleteCodexProfile(profileInfo.name);
-      } else {
-        deleteProfile(profileInfo.name);
-      }
-
-      if (getDefaultProfile() === profileInfo.name) {
-        clearDefaultProfile();
-      }
-
-      console.log(chalk.green(`✓ ${typeLabel} Profile "${profileInfo.name}" 已删除`));
+  if (!args[0]) {
+    const choices = all.map((p) => {
+      const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
+      return { name: `${tag} ${p.name}`, value: p };
     });
+    profileInfo = await select('Select profile to delete:', choices);
+  } else {
+    profileInfo = store.resolveProfile(args[0]);
+    if (!profileInfo) {
+      console.log(red(`Profile "${args[0]}" does not exist`));
+      process.exit(1);
+    }
+  }
+
+  const typeLabel = profileInfo.type === 'codex' ? 'Codex' : 'Claude';
+  const ok = await confirm(`Delete ${typeLabel} profile "${profileInfo.name}"?`, false);
+  if (!ok) {
+    console.log(yellow('Cancelled'));
+    process.exit(0);
+  }
+
+  if (profileInfo.type === 'codex') {
+    store.deleteCodexProfile(profileInfo.name);
+  } else {
+    store.deleteClaudeProfile(profileInfo.name);
+  }
+
+  if (store.getDefault() === profileInfo.name) store.clearDefault();
+
+  console.log(green(`Deleted ${typeLabel} profile "${profileInfo.name}"`));
 }

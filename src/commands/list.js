@@ -1,53 +1,49 @@
-import chalk from 'chalk';
-import Table from 'cli-table3';
-import { getAllProfiles, getDefaultProfile, getProfileCredentials, getCodexProfileCredentials } from '../profiles.js';
+import * as store from '../store.js';
+import { cyan, green, gray, blue, magenta, yellow } from '../color.js';
 
-export function listCommand(program) {
-  program
-    .command('list')
-    .alias('ls')
-    .description('列出所有 profiles')
-    .action(() => {
-      const allProfiles = getAllProfiles();
-      const defaultProfile = getDefaultProfile();
+export function listCommand(args, flags) {
+  const all = store.getAllProfiles();
+  const def = store.getDefault();
 
-      if (allProfiles.length === 0) {
-        console.log(chalk.yellow('没有可用的 profiles'));
-        console.log(chalk.gray('使用 "ccc new" 创建配置'));
-        return;
-      }
+  if (all.length === 0) {
+    console.log(yellow('No profiles available'));
+    console.log(gray('Use "ccc new" to create one'));
+    return;
+  }
 
-      const table = new Table({
-        head: [chalk.cyan('#'), chalk.cyan('类型'), chalk.cyan('Profile'), chalk.cyan('API URL')],
-        style: { head: [], border: [] },
-        chars: {
-          'top': '─', 'top-mid': '┬', 'top-left': '┌', 'top-right': '┐',
-          'bottom': '─', 'bottom-mid': '┴', 'bottom-left': '└', 'bottom-right': '┘',
-          'left': '│', 'left-mid': '├', 'mid': '─', 'mid-mid': '┼',
-          'right': '│', 'right-mid': '┤', 'middle': '│'
-        }
-      });
+  // Compute column widths
+  const rows = all.map((p, i) => {
+    const num = String(i + 1);
+    const type = p.type === 'codex' ? 'Codex' : 'Claude';
+    const name = p.name;
+    let url;
+    if (p.type === 'codex') {
+      url = store.getCodexCredentials(p.name).baseUrl || gray('(not set)');
+    } else {
+      url = store.getClaudeCredentials(p.name).apiUrl || gray('(not set)');
+    }
+    return { num, type, name, url, isDefault: p.name === def, rawType: p.type };
+  });
 
-      allProfiles.forEach((p, index) => {
-        const isDefault = p.name === defaultProfile;
+  const w0 = Math.max(1, ...rows.map((r) => r.num.length));
+  const w1 = 6; // "Claude" is the longest
+  const w2 = Math.max(7, ...rows.map((r) => r.name.length + (r.isDefault ? 2 : 0)));
 
-        let apiUrl;
-        if (p.type === 'codex') {
-          const creds = getCodexProfileCredentials(p.name);
-          apiUrl = creds.baseUrl || chalk.gray('(未设置)');
-        } else {
-          const creds = getProfileCredentials(p.name);
-          apiUrl = creds.apiUrl || chalk.gray('(未设置)');
-        }
+  console.log();
+  // Header
+  console.log(
+    `  ${cyan('#'.padEnd(w0))}  ${cyan('Type'.padEnd(w1))}  ${cyan('Profile'.padEnd(w2))}  ${cyan('API URL')}`,
+  );
+  console.log(`  ${'─'.repeat(w0)}  ${'─'.repeat(w1)}  ${'─'.repeat(w2)}  ${'─'.repeat(30)}`);
 
-        const num = isDefault ? chalk.green(`${index + 1}`) : chalk.gray(`${index + 1}`);
-        const typeTag = p.type === 'codex' ? chalk.blue('Codex') : chalk.magenta('Claude');
-        const name = isDefault ? chalk.green(`${p.name} *`) : p.name;
-        table.push([num, typeTag, name, apiUrl]);
-      });
+  for (const r of rows) {
+    const num = r.isDefault ? green(r.num.padEnd(w0)) : gray(r.num.padEnd(w0));
+    const type = r.rawType === 'codex' ? blue('Codex'.padEnd(w1)) : magenta('Claude'.padEnd(w1 - 1) + ' ');
+    const name = r.isDefault
+      ? green(`${r.name} *`.padEnd(w2))
+      : r.name.padEnd(w2);
+    console.log(`  ${num}  ${type}  ${name}  ${r.url}`);
+  }
 
-      console.log();
-      console.log(table.toString());
-      console.log(chalk.gray(`\n  共 ${allProfiles.length} 个配置，* 表示默认，可用序号或名称启动\n`));
-    });
+  console.log(gray(`\n  ${all.length} profiles, * = default, launch by number or name\n`));
 }

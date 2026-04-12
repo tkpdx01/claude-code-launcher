@@ -1,98 +1,77 @@
-import chalk from 'chalk';
-import inquirer from 'inquirer';
-import {
-  getAllProfiles,
-  getDefaultProfile,
-  anyProfileExists,
-  resolveAnyProfile,
-  getProfilePath,
-  getCodexProfileDir,
-  readProfile,
-  readCodexProfile,
-  getCodexProfileCredentials
-} from '../profiles.js';
-import { formatValue } from '../utils.js';
+import * as store from '../store.js';
+import { select } from '../prompt.js';
+import { cyan, green, gray, red, yellow, white, blue, magenta, bold } from '../color.js';
 
-export function showCommand(program) {
-  program
-    .command('show [profile]')
-    .description('显示 profile 的完整配置')
-    .action(async (profile) => {
-      const allProfiles = getAllProfiles();
+function maskKey(key) {
+  if (!key) return 'not set';
+  return key.substring(0, 15) + '...';
+}
 
-      if (allProfiles.length === 0) {
-        console.log(chalk.yellow('没有可用的 profiles'));
-        process.exit(0);
-      }
+export async function showCommand(args) {
+  const all = store.getAllProfiles();
+  if (all.length === 0) {
+    console.log(yellow('No profiles available'));
+    process.exit(0);
+  }
 
-      let profileInfo;
+  let profileInfo;
 
-      if (!profile) {
-        const defaultProfile = getDefaultProfile();
-        const choices = allProfiles.map(p => {
-          const typeTag = p.type === 'codex' ? chalk.blue('[Codex]') : chalk.magenta('[Claude]');
-          return { name: `${typeTag} ${p.name}`, value: p };
-        });
-
-        const { selected } = await inquirer.prompt([
-          {
-            type: 'list',
-            name: 'selected',
-            message: '选择要查看的配置:',
-            choices,
-            default: allProfiles.findIndex(p => p.name === defaultProfile)
-          }
-        ]);
-        profileInfo = selected;
-      } else {
-        profileInfo = resolveAnyProfile(profile);
-        if (!profileInfo) {
-          console.log(chalk.red(`Profile "${profile}" 不存在`));
-          process.exit(1);
-        }
-      }
-
-      const isDefault = getDefaultProfile() === profileInfo.name;
-
-      if (profileInfo.type === 'codex') {
-        const dir = getCodexProfileDir(profileInfo.name);
-        const codexProfile = readCodexProfile(profileInfo.name);
-        const { apiKey, baseUrl, model } = getCodexProfileCredentials(profileInfo.name);
-
-        console.log(chalk.cyan.bold(`\n  Profile: ${profileInfo.name}`) + ` ${chalk.blue('[Codex]')}` + (isDefault ? chalk.green(' (默认)') : ''));
-        console.log(chalk.gray(`  路径: ${dir}\n`));
-
-        console.log(`  ${chalk.cyan('OPENAI_API_KEY')}: ${chalk.yellow(apiKey ? apiKey.substring(0, 15) + '...' : '未设置')}`);
-        console.log(`  ${chalk.cyan('Base URL')}: ${chalk.white(baseUrl)}`);
-        console.log(`  ${chalk.cyan('Model')}: ${chalk.white(model || '(默认)')}`);
-
-        if (codexProfile?.configToml) {
-          console.log(`\n  ${chalk.cyan('config.toml')}:`);
-          codexProfile.configToml.split('\n').forEach(line => {
-            console.log(`    ${chalk.gray(line)}`);
-          });
-        }
-      } else {
-        const profilePath = getProfilePath(profileInfo.name);
-        const settings = readProfile(profileInfo.name);
-
-        console.log(chalk.cyan.bold(`\n  Profile: ${profileInfo.name}`) + ` ${chalk.magenta('[Claude]')}` + (isDefault ? chalk.green(' (默认)') : ''));
-        console.log(chalk.gray(`  路径: ${profilePath}\n`));
-
-        Object.entries(settings).forEach(([key, value]) => {
-          const formattedValue = formatValue(key, value);
-          if ((key === 'apiKey' || key === 'ANTHROPIC_AUTH_TOKEN') && value) {
-            console.log(`  ${chalk.cyan(key)}: ${chalk.yellow(formattedValue)}`);
-          } else if (typeof value === 'boolean') {
-            console.log(`  ${chalk.cyan(key)}: ${value ? chalk.green(formattedValue) : chalk.red(formattedValue)}`);
-          } else if (typeof value === 'object') {
-            console.log(`  ${chalk.cyan(key)}: ${chalk.gray(formattedValue)}`);
-          } else {
-            console.log(`  ${chalk.cyan(key)}: ${chalk.white(formattedValue)}`);
-          }
-        });
-      }
-
-      console.log();
+  if (!args[0]) {
+    const def = store.getDefault();
+    const choices = all.map((p) => {
+      const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
+      return { name: `${tag} ${p.name}`, value: p };
     });
+    const defIdx = all.findIndex((p) => p.name === def);
+    profileInfo = await select('Select profile to view:', choices, Math.max(defIdx, 0));
+  } else {
+    profileInfo = store.resolveProfile(args[0]);
+    if (!profileInfo) {
+      console.log(red(`Profile "${args[0]}" does not exist`));
+      process.exit(1);
+    }
+  }
+
+  const isDefault = store.getDefault() === profileInfo.name;
+  const defTag = isDefault ? green(' (default)') : '';
+
+  if (profileInfo.type === 'codex') {
+    const { apiKey, baseUrl, model } = store.getCodexCredentials(profileInfo.name);
+    const profile = store.readCodexProfile(profileInfo.name);
+
+    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${blue('[Codex]')}${defTag}`);
+    console.log(gray(`  Path: ${store.getCodexProfileDir(profileInfo.name)}\n`));
+    console.log(`  ${cyan('OPENAI_API_KEY')}: ${yellow(maskKey(apiKey))}`);
+    console.log(`  ${cyan('Base URL')}: ${white(baseUrl)}`);
+    console.log(`  ${cyan('Model')}: ${white(model || '(default)')}`);
+
+    if (profile?.configToml) {
+      console.log(`\n  ${cyan('config.toml')}:`);
+      for (const line of profile.configToml.split('\n')) {
+        console.log(`    ${gray(line)}`);
+      }
+    }
+  } else {
+    const { apiKey, apiUrl } = store.getClaudeCredentials(profileInfo.name);
+    const profile = store.readClaudeProfile(profileInfo.name);
+
+    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${magenta('[Claude]')}${defTag}`);
+    console.log();
+    console.log(`  ${cyan('ANTHROPIC_BASE_URL')}: ${white(apiUrl || 'not set')}`);
+    console.log(`  ${cyan('ANTHROPIC_AUTH_TOKEN')}: ${yellow(maskKey(apiKey))}`);
+
+    if (profile?.env && Object.keys(profile.env).length > 0) {
+      console.log(`\n  ${cyan('Extra env')}:`);
+      for (const [k, v] of Object.entries(profile.env)) {
+        console.log(`    ${gray(k)}: ${gray(v)}`);
+      }
+    }
+
+    if (profile?.settings && Object.keys(profile.settings).length > 0) {
+      console.log(`\n  ${cyan('Settings overrides')}:`);
+      console.log(`    ${gray(JSON.stringify(profile.settings, null, 2).split('\n').join('\n    '))}`);
+    }
+  }
+
+  console.log();
 }

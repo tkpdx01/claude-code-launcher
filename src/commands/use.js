@@ -1,20 +1,21 @@
-import chalk from 'chalk';
-import { anyProfileExists, resolveAnyProfile, setDefaultProfile } from '../profiles.js';
+import * as store from '../store.js';
+import { green, red, yellow, blue, magenta } from '../color.js';
 
-export function useCommand(program) {
-  program
-    .command('use <profile>')
-    .description('设置默认 profile')
-    .action((profile) => {
-      const resolved = resolveAnyProfile(profile);
-      if (!resolved) {
-        console.log(chalk.red(`Profile "${profile}" 不存在`));
-        console.log(chalk.yellow(`使用 "ccc list" 查看可用的 profiles`));
-        process.exit(1);
-      }
+export function useCommand(args) {
+  const name = args[0];
+  if (!name) {
+    console.log(yellow('Usage: ccc use <profile>'));
+    process.exit(1);
+  }
 
-      const typeTag = resolved.type === 'codex' ? chalk.blue('[Codex]') : chalk.magenta('[Claude]');
-      setDefaultProfile(resolved.name);
-      console.log(chalk.green(`✓ 默认 profile 已设置为 ${typeTag} "${resolved.name}"`));
-    });
+  const resolved = store.resolveProfile(name);
+  if (!resolved) {
+    console.log(red(`Profile "${name}" does not exist`));
+    console.log(yellow('Use "ccc list" to see available profiles'));
+    process.exit(1);
+  }
+
+  const tag = resolved.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
+  store.setDefault(resolved.name);
+  console.log(green(`Default set to ${tag} "${resolved.name}"`));
 }
