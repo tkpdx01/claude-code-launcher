@@ -10,8 +10,12 @@ const RESERVED = new Set([
 ]);
 
 function validateName(name) {
-  if (!name.trim()) return 'Name cannot be empty';
-  if (RESERVED.has(name.trim())) return 'Name conflicts with a command keyword';
+  const n = name.trim();
+  if (!n) return 'Name cannot be empty';
+  if (RESERVED.has(n)) return 'Name conflicts with a command keyword';
+  if (n.includes('..') || n.includes('/') || n.includes('\\')) return 'Name contains invalid characters';
+  if (!/^[a-zA-Z0-9_\-. ]+$/.test(n)) return 'Name contains invalid characters';
+  if (n.length > 64) return 'Name too long (max 64)';
   return true;
 }
 
@@ -34,7 +38,7 @@ export async function newCommand(args) {
     process.exit(1);
   }
 
-  // Check existing
+  // Check existing (cross-type: delete old type if overwriting)
   const existing = store.anyProfileExists(name);
   if (existing.exists) {
     const typeLabel = existing.type === 'codex' ? 'Codex' : 'Claude';
@@ -42,6 +46,11 @@ export async function newCommand(args) {
     if (!overwrite) {
       console.log(yellow('Cancelled'));
       process.exit(0);
+    }
+    // Remove old profile if switching type
+    if (existing.type !== profileType) {
+      if (existing.type === 'codex') store.deleteCodexProfile(name);
+      else store.deleteClaudeProfile(name);
     }
   }
 

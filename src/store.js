@@ -45,11 +45,18 @@ function parseClaudeProfile(raw) {
   if (raw.type === 'claude') return raw;
   // Old format: full settings.json copy with env.ANTHROPIC_AUTH_TOKEN
   if (raw.env?.ANTHROPIC_AUTH_TOKEN) {
-    return {
+    const { ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ...restEnv } = raw.env;
+    const result = {
       type: 'claude',
-      apiUrl: raw.env.ANTHROPIC_BASE_URL || '',
-      apiKey: raw.env.ANTHROPIC_AUTH_TOKEN || '',
+      apiUrl: ANTHROPIC_BASE_URL || '',
+      apiKey: ANTHROPIC_AUTH_TOKEN || '',
     };
+    // Preserve extra env vars from old profile
+    const filteredEnv = Object.fromEntries(
+      Object.entries(restEnv).filter(([k]) => !k.startsWith('CLAUDE_CODE_') && !k.startsWith('DISABLE_')),
+    );
+    if (Object.keys(filteredEnv).length > 0) result.env = filteredEnv;
+    return result;
   }
   // Unknown but has apiKey (partially migrated?)
   if (raw.apiKey !== undefined) return { type: 'claude', ...raw };

@@ -13,49 +13,60 @@ export function input(message, defaultValue = '') {
       rl.close();
       resolve(answer.trim() || defaultValue);
     });
+    rl.on('close', () => resolve(defaultValue)); // Ctrl+C / EOF
   });
 }
 
 // --- Password input (masked with *) ---
 export function password(message) {
   return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const stdout = process.stdout;
-    let value = '';
-
-    // Mute default output
     const origWrite = stdout.write.bind(stdout);
-    stdout.write = (chunk) => {
-      // Only suppress echoed characters from the question prompt input
-      // Allow the initial question prompt through
-      return origWrite('');
-    };
+    let value = '';
+    let done = false;
 
-    rl.question(`${cyan('?')} ${message} `, () => {
+    function cleanup() {
+      if (done) return;
+      done = true;
       stdout.write = origWrite;
+      process.stdin.removeListener('data', onData);
+    }
+
+    // Print prompt
+    origWrite(`${cyan('?')} ${message} `);
+
+    // Suppress readline echo — intercept stdout.write
+    stdout.write = (chunk) => origWrite('');
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+    rl.question('', () => {
+      cleanup();
       origWrite('\n');
       rl.close();
       resolve(value);
     });
 
-    // Restore write temporarily for prompt display
-    stdout.write = origWrite;
-    origWrite(`${cyan('?')} ${message} `);
-    stdout.write = (chunk) => {
-      // Intercept echoed input, print * instead
-      const s = typeof chunk === 'string' ? chunk : chunk.toString();
-      if (s === '\n' || s === '\r\n' || s === '\r') {
-        return origWrite(s);
-      }
-      return origWrite('');
-    };
+    rl.on('close', () => {
+      // Ctrl+C or EOF
+      cleanup();
+      origWrite('\n');
+      resolve(value);
+    });
 
-    process.stdin.on('data', function handler(data) {
+    function onData(data) {
+      if (done) return;
       const str = data.toString();
       for (const ch of str) {
+        if (ch === '\x03') {
+          // Ctrl+C
+          cleanup();
+          origWrite('\n');
+          rl.close();
+          process.exit(0);
+        }
         if (ch === '\r' || ch === '\n') continue;
         if (ch === '\x7f' || ch === '\b') {
-          // Backspace
           if (value.length > 0) {
             value = value.slice(0, -1);
             origWrite('\b \b');
@@ -65,7 +76,9 @@ export function password(message) {
           origWrite('*');
         }
       }
-    });
+    }
+
+    process.stdin.on('data', onData);
   });
 }
 
@@ -80,6 +93,7 @@ export function confirm(message, defaultValue = false) {
       if (a === '') resolve(defaultValue);
       else resolve(a === 'y' || a === 'yes');
     });
+    rl.on('close', () => resolve(defaultValue)); // Ctrl+C / EOF
   });
 }
 
@@ -92,14 +106,19 @@ export function select(message, choices, defaultIndex = 0) {
       return;
     }
 
+    // Non-TTY: auto-select default
+    if (!process.stdin.isTTY) {
+      const idx = defaultIndex >= 0 && defaultIndex < choices.length ? defaultIndex : 0;
+      resolve(choices[idx].value);
+      return;
+    }
+
     const stdout = process.stdout;
     let cursor = defaultIndex >= 0 && defaultIndex < choices.length ? defaultIndex : 0;
 
-    // Calculate visible window for long lists
     const maxVisible = Math.min(choices.length, Math.max(5, (stdout.rows || 24) - 4));
 
     function getWindowStart() {
-      // Keep cursor centered in window when possible
       let start = cursor - Math.floor(maxVisible / 2);
       start = Math.max(0, start);
       start = Math.min(choices.length - maxVisible, start);
@@ -138,29 +157,23 @@ export function select(message, choices, defaultIndex = 0) {
     let renderedLineCount = 0;
 
     function draw() {
-      // Clear previously rendered lines
       if (renderedLineCount > 0) {
-        stdout.write(`\x1b[${renderedLineCount}A`); // Move up
-        stdout.write('\x1b[0J'); // Clear from cursor to end
+        stdout.write(`\x1b[${renderedLineCount}A`);
+        stdout.write('\x1b[0J');
       }
       const lines = render();
       renderedLineCount = lines.length;
       stdout.write(lines.join('\n') + '\n');
     }
 
-    // Enter raw mode for keypress detection
     const wasRaw = process.stdin.isRaw;
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(true);
-    }
+    process.stdin.setRawMode(true);
     process.stdin.resume();
 
     draw();
 
     function cleanup() {
-      if (process.stdin.isTTY) {
-        process.stdin.setRawMode(wasRaw || false);
-      }
+      process.stdin.setRawMode(wasRaw || false);
       process.stdin.removeListener('data', onKeypress);
       process.stdin.pause();
     }
@@ -168,28 +181,18 @@ export function select(message, choices, defaultIndex = 0) {
     function onKeypress(data) {
       const key = data.toString();
 
-      // Arrow up / k
       if (key === '\x1b[A' || key === 'k') {
-        if (cursor > 0) {
-          cursor--;
-          draw();
-        }
+        if (cursor > 0) { cursor--; draw(); }
         return;
       }
 
-      // Arrow down / j
       if (key === '\x1b[B' || key === 'j') {
-        if (cursor < choices.length - 1) {
-          cursor++;
-          draw();
-        }
+        if (cursor < choices.length - 1) { cursor++; draw(); }
         return;
       }
 
-      // Enter
       if (key === '\r' || key === '\n') {
         cleanup();
-        // Show selected result
         if (renderedLineCount > 0) {
           stdout.write(`\x1b[${renderedLineCount}A`);
           stdout.write('\x1b[0J');
@@ -199,7 +202,6 @@ export function select(message, choices, defaultIndex = 0) {
         return;
       }
 
-      // Ctrl+C
       if (key === '\x03') {
         cleanup();
         stdout.write('\n');

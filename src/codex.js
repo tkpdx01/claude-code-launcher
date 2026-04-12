@@ -76,12 +76,15 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
 
   const child = spawn('codex', args, {
     stdio: 'inherit',
-    shell: true,
     env,
   });
 
+  child.on('close', (code) => process.exit(code ?? 0));
   child.on('error', (err) => {
     console.log(red(`Launch failed: ${err.message}`));
     process.exit(1);
   });
+  for (const sig of ['SIGTERM', 'SIGHUP']) {
+    process.on(sig, () => child.kill(sig));
+  }
 }

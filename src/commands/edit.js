@@ -55,6 +55,7 @@ export async function editCommand(args) {
       console.log(green(`\nProfile "${profileInfo.name}" updated`));
     }
   } else {
+    const existing = store.readClaudeProfile(profileInfo.name) || {};
     const { apiKey: curKey, apiUrl: curUrl } = store.getClaudeCredentials(profileInfo.name);
 
     console.log(cyan(`\nCurrent config (${profileInfo.name}) ${magenta('[Claude]')}:`));
@@ -66,18 +67,21 @@ export async function editCommand(args) {
     const apiKey = await input('ANTHROPIC_AUTH_TOKEN:', curKey || '');
     const newName = await input('Profile name:', profileInfo.name);
 
+    // Preserve env/settings from existing profile
+    const updated = { ...existing, apiUrl, apiKey };
+
     if (newName && newName !== profileInfo.name) {
       const check = store.anyProfileExists(newName);
       if (check.exists) {
         console.log(red(`Profile "${newName}" already exists`));
         process.exit(1);
       }
-      store.saveClaudeProfile(newName, { apiUrl, apiKey });
+      store.saveClaudeProfile(newName, updated);
       store.deleteClaudeProfile(profileInfo.name);
       if (store.getDefault() === profileInfo.name) store.setDefault(newName);
       console.log(green(`\nRenamed to "${newName}" and saved`));
     } else {
-      store.saveClaudeProfile(profileInfo.name, { apiUrl, apiKey });
+      store.saveClaudeProfile(profileInfo.name, updated);
       console.log(green(`\nProfile "${profileInfo.name}" updated`));
     }
   }

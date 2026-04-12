@@ -96,8 +96,10 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
   // Set model override env vars to empty in merged settings — this ensures
   // they take priority over user settings source and force Claude Code
   // to use its built-in default model for this endpoint.
+  // Skip keys explicitly set in profile.env (user wants those).
+  const profileEnvKeys = new Set(Object.keys(profile.env || {}));
   for (const key of Object.keys(merged.env)) {
-    if (isModelOverrideKey(key)) merged.env[key] = '';
+    if (isModelOverrideKey(key) && !profileEnvKeys.has(key)) merged.env[key] = '';
   }
 
   // Strip inherited model from main config — different endpoints support different
@@ -137,12 +139,15 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
 
   const child = spawn('claude', args, {
     stdio: 'inherit',
-    shell: true,
     env: childEnv,
   });
 
+  child.on('close', (code) => process.exit(code ?? 0));
   child.on('error', (err) => {
     console.log(red(`Launch failed: ${err.message}`));
     process.exit(1);
   });
+  for (const sig of ['SIGTERM', 'SIGHUP']) {
+    process.on(sig, () => child.kill(sig));
+  }
 }
