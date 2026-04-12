@@ -6,7 +6,6 @@ import {
   CONFIG_DIR,
   PROFILES_DIR,
   CODEX_PROFILES_DIR,
-  DEFAULT_FILE,
 } from './config.js';
 
 // ---- Directory setup ----
@@ -229,22 +228,6 @@ export function anyProfileExists(name) {
   if (claudeProfileExists(name)) return { exists: true, type: 'claude' };
   if (codexProfileExists(name)) return { exists: true, type: 'codex' };
   return { exists: false, type: null };
-}
-
-// ---- Default profile ----
-
-export function getDefault() {
-  if (fs.existsSync(DEFAULT_FILE)) return fs.readFileSync(DEFAULT_FILE, 'utf-8').trim();
-  return null;
-}
-
-export function setDefault(name) {
-  ensureDirs();
-  fs.writeFileSync(DEFAULT_FILE, name);
-}
-
-export function clearDefault() {
-  if (fs.existsSync(DEFAULT_FILE)) fs.unlinkSync(DEFAULT_FILE);
 }
 
 // ---- Codex profile dir path (for CODEX_HOME) ----

@@ -48,7 +48,6 @@ export async function editCommand(args) {
       }
       store.createCodexProfile(newName, apiKey, baseUrl, model);
       store.deleteCodexProfile(profileInfo.name);
-      if (store.getDefault() === profileInfo.name) store.setDefault(newName);
       console.log(green(`\nRenamed to "${newName}" and saved`));
     } else {
       store.createCodexProfile(profileInfo.name, apiKey, baseUrl, model);
@@ -78,7 +77,6 @@ export async function editCommand(args) {
       }
       store.saveClaudeProfile(newName, updated);
       store.deleteClaudeProfile(profileInfo.name);
-      if (store.getDefault() === profileInfo.name) store.setDefault(newName);
       console.log(green(`\nRenamed to "${newName}" and saved`));
     } else {
       store.saveClaudeProfile(profileInfo.name, updated);

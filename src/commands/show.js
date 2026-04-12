@@ -17,13 +17,11 @@ export async function showCommand(args) {
   let profileInfo;
 
   if (!args[0]) {
-    const def = store.getDefault();
     const choices = all.map((p) => {
       const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
       return { name: `${tag} ${p.name}`, value: p };
     });
-    const defIdx = all.findIndex((p) => p.name === def);
-    profileInfo = await select('Select profile to view:', choices, Math.max(defIdx, 0));
+    profileInfo = await select('Select profile to view:', choices);
   } else {
     profileInfo = store.resolveProfile(args[0]);
     if (!profileInfo) {
@@ -32,14 +30,11 @@ export async function showCommand(args) {
     }
   }
 
-  const isDefault = store.getDefault() === profileInfo.name;
-  const defTag = isDefault ? green(' (default)') : '';
-
   if (profileInfo.type === 'codex') {
     const { apiKey, baseUrl, model } = store.getCodexCredentials(profileInfo.name);
     const profile = store.readCodexProfile(profileInfo.name);
 
-    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${blue('[Codex]')}${defTag}`);
+    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${blue('[Codex]')}`);
     console.log(gray(`  Path: ${store.getCodexProfileDir(profileInfo.name)}\n`));
     console.log(`  ${cyan('OPENAI_API_KEY')}: ${yellow(maskKey(apiKey))}`);
     console.log(`  ${cyan('Base URL')}: ${white(baseUrl)}`);
@@ -55,7 +50,7 @@ export async function showCommand(args) {
     const { apiKey, apiUrl } = store.getClaudeCredentials(profileInfo.name);
     const profile = store.readClaudeProfile(profileInfo.name);
 
-    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${magenta('[Claude]')}${defTag}`);
+    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${magenta('[Claude]')}`);
     console.log();
     console.log(`  ${cyan('ANTHROPIC_BASE_URL')}: ${white(apiUrl || 'not set')}`);
     console.log(`  ${cyan('ANTHROPIC_AUTH_TOKEN')}: ${yellow(maskKey(apiKey))}`);

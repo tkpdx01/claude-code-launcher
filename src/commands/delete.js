@@ -38,7 +38,5 @@ export async function deleteCommand(args) {
     store.deleteClaudeProfile(profileInfo.name);
   }
 
-  if (store.getDefault() === profileInfo.name) store.clearDefault();
-
   console.log(green(`Deleted ${typeLabel} profile "${profileInfo.name}"`));
 }

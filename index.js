@@ -10,17 +10,15 @@ import * as store from './src/store.js';
 import { launchClaude } from './src/claude.js';
 import { launchCodex } from './src/codex.js';
 import { select } from './src/prompt.js';
-import { red, yellow, green, blue, magenta, gray } from './src/color.js';
+import { red, yellow, green, blue, magenta, cyan, gray, bold, dim } from './src/color.js';
 import { listCommand } from './src/commands/list.js';
 import { newCommand } from './src/commands/new.js';
 import { editCommand } from './src/commands/edit.js';
 import { deleteCommand } from './src/commands/delete.js';
-import { useCommand } from './src/commands/use.js';
 import { showCommand } from './src/commands/show.js';
 import { helpCommand } from './src/commands/help.js';
 import { applyCommand } from './src/commands/apply.js';
 
-// Version from package.json
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
 
@@ -29,48 +27,83 @@ const rawArgs = process.argv.slice(2);
 const flags = new Set(rawArgs.filter((a) => a.startsWith('-')));
 const positional = rawArgs.filter((a) => !a.startsWith('-'));
 const [cmd, ...rest] = positional;
-
 const ddd = flags.has('-d') || flags.has('--ddd');
 
-// Version
 if (flags.has('-v') || flags.has('--version') || flags.has('-V')) {
   console.log(pkg.version);
   process.exit(0);
 }
 
-// Help
 if (flags.has('-h') || flags.has('--help') || cmd === 'help') {
   helpCommand();
   process.exit(0);
 }
 
-// Launch by profile type
-function launchProfile(name, type, ddd) {
-  if (type === 'codex') launchCodex(name, ddd);
-  else launchClaude(name, ddd);
+function launchProfile(name, type, d) {
+  if (type === 'codex') launchCodex(name, d);
+  else launchClaude(name, d);
 }
 
-// Interactive profile selection
-async function selectAndLaunch() {
+// --- Profile picker (reused by launch / apply) ---
+async function pickProfile(message) {
   const all = store.getAllProfiles();
-  if (all.length === 0) {
-    console.log(yellow('No profiles available'));
-    console.log(gray('Use "ccc new" to create one'));
-    process.exit(0);
-  }
+  if (all.length === 0) return null;
 
-  const def = store.getDefault();
   const choices = all.map((p, i) => {
     const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
-    const label = p.name === def
-      ? `${i + 1}. ${tag} ${p.name} ${green('(default)')}`
-      : `${i + 1}. ${tag} ${p.name}`;
-    return { name: label, value: p };
+    return { name: `${gray(String(i + 1).padStart(2))}  ${tag} ${p.name}`, value: p };
   });
 
-  const defIdx = all.findIndex((p) => p.name === def);
-  const profile = await select('Select profile:', choices, Math.max(defIdx, 0));
-  launchProfile(profile.name, profile.type, ddd);
+  return select(message, choices);
+}
+
+// --- Main menu (ccc with no args) ---
+async function mainMenu() {
+  const all = store.getAllProfiles();
+
+  console.log(bold(cyan(`\n  CCC`)) + dim(` v${pkg.version}\n`));
+
+  if (all.length === 0) {
+    console.log(yellow('  No profiles yet.\n'));
+    await newCommand([]);
+    return;
+  }
+
+  const action = await select('', [
+    { name: `${green('Launch')}           start claude/codex with a profile`, value: 'launch' },
+    { name: `${green('Apply')}            write credentials to main config`, value: 'apply' },
+    { name: `${cyan('New')}              create a new profile`, value: 'new' },
+    { name: `${cyan('Edit')}             edit profile credentials`, value: 'edit' },
+    { name: `${cyan('Show')}             view profile details`, value: 'show' },
+    { name: `${dim('List')}             list all profiles`, value: 'list' },
+    { name: `${dim('Delete')}           remove a profile`, value: 'delete' },
+  ]);
+
+  switch (action) {
+    case 'launch': {
+      const p = await pickProfile('Launch:');
+      if (p) launchProfile(p.name, p.type, ddd);
+      break;
+    }
+    case 'apply':
+      await applyCommand([]);
+      break;
+    case 'new':
+      await newCommand([]);
+      break;
+    case 'edit':
+      await editCommand([]);
+      break;
+    case 'show':
+      await showCommand([]);
+      break;
+    case 'list':
+      listCommand();
+      break;
+    case 'delete':
+      await deleteCommand([]);
+      break;
+  }
 }
 
 // Command dispatch
@@ -81,7 +114,6 @@ const commands = {
   edit: editCommand,
   delete: deleteCommand,
   rm: deleteCommand,
-  use: useCommand,
   show: showCommand,
   apply: applyCommand,
 };
@@ -90,7 +122,7 @@ async function main() {
   if (cmd && commands[cmd]) {
     await commands[cmd](rest, flags);
   } else if (cmd) {
-    // Treat as profile name or index
+    // Direct launch by profile name or index
     const resolved = store.resolveProfile(cmd);
     if (resolved) {
       launchProfile(resolved.name, resolved.type, ddd);
@@ -100,18 +132,8 @@ async function main() {
       process.exit(1);
     }
   } else {
-    // No args: try default, otherwise interactive
-    const def = store.getDefault();
-    if (def) {
-      const check = store.anyProfileExists(def);
-      if (check.exists) {
-        launchProfile(def, check.type, ddd);
-      } else {
-        await selectAndLaunch();
-      }
-    } else {
-      await selectAndLaunch();
-    }
+    // No args → main menu
+    await mainMenu();
   }
 }
 

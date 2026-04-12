@@ -72,11 +72,6 @@ export async function newCommand(args) {
     store.createCodexProfile(finalName, apiKey, baseUrl, model);
     console.log(green(`\nCreated Codex profile "${finalName}"`));
 
-    if (store.getAllProfiles().length === 1) {
-      store.setDefault(finalName);
-      console.log(green('Set as default'));
-    }
-
     if (await confirm('Launch Codex now?', false)) {
       launchCodex(finalName);
     }
@@ -96,11 +91,6 @@ export async function newCommand(args) {
     store.ensureDirs();
     store.saveClaudeProfile(finalName, { apiUrl, apiKey });
     console.log(green(`\nCreated Claude profile "${finalName}"`));
-
-    if (store.getAllProfiles().length === 1) {
-      store.setDefault(finalName);
-      console.log(green('Set as default'));
-    }
 
     if (await confirm('Launch Claude now?', false)) {
       launchClaude(finalName);
