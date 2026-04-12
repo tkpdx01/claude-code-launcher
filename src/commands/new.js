@@ -6,7 +6,7 @@ import { launchClaude } from '../claude.js';
 import { launchCodex } from '../codex.js';
 
 const RESERVED = new Set([
-  'list', 'ls', 'use', 'show', 'new', 'edit', 'delete', 'rm', 'help',
+  'list', 'ls', 'use', 'show', 'new', 'edit', 'delete', 'rm', 'apply', 'help',
 ]);
 
 function validateName(name) {

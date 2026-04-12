@@ -2,7 +2,6 @@
 
 // CCC — Claude Code / Codex Settings Launcher
 // Zero external dependencies. Profiles store only credentials.
-// Never writes to ~/.claude/settings.json or ~/.codex/.
 
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -19,6 +18,7 @@ import { deleteCommand } from './src/commands/delete.js';
 import { useCommand } from './src/commands/use.js';
 import { showCommand } from './src/commands/show.js';
 import { helpCommand } from './src/commands/help.js';
+import { applyCommand } from './src/commands/apply.js';
 
 // Version from package.json
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -83,6 +83,7 @@ const commands = {
   rm: deleteCommand,
   use: useCommand,
   show: showCommand,
+  apply: applyCommand,
 };
 
 async function main() {

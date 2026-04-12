@@ -17,6 +17,7 @@ export function helpCommand() {
   console.log(gray('    ccc use <profile>      ') + 'Set default profile');
   console.log(gray('    ccc new [name]         ') + 'Create new profile (Claude or Codex)');
   console.log(gray('    ccc edit [profile]     ') + 'Edit profile credentials');
+  console.log(gray('    ccc apply [profile]    ') + 'Write credentials to ~/.claude or ~/.codex (for native launch)');
   console.log(gray('    ccc delete, rm [name]  ') + 'Delete profile');
   console.log(gray('    ccc help               ') + 'Show this help');
   console.log();
@@ -37,5 +38,6 @@ export function helpCommand() {
   console.log(gray('    ccc ls                 ') + 'List profiles with index numbers');
   console.log(gray('    ccc 3                  ') + 'Launch profile #3');
   console.log(gray('    ccc 3 -d               ') + 'Launch profile #3 with skip-permissions/full-auto');
+  console.log(gray('    ccc apply myapi        ') + 'Write myapi credentials to main config for native launch');
   console.log();
 }
