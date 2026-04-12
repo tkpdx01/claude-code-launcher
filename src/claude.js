@@ -93,9 +93,11 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
     }
   }
 
-  // Strip model override env vars from merged settings
+  // Set model override env vars to empty in merged settings — this ensures
+  // they take priority over user settings source and force Claude Code
+  // to use its built-in default model for this endpoint.
   for (const key of Object.keys(merged.env)) {
-    if (isModelOverrideKey(key)) delete merged.env[key];
+    if (isModelOverrideKey(key)) merged.env[key] = '';
   }
 
   // Strip inherited model from main config — different endpoints support different

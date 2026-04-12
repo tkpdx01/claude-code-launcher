@@ -35,10 +35,13 @@ export function buildClaudeEnv(profile) {
     }
   }
 
-  // Strip model override env vars that aren't explicitly set in the profile
+  // Override model env vars with empty string (not delete!) so process env
+  // takes priority over ~/.claude/settings.json user setting source.
+  // Deleting would let Claude Code fall back to user settings which contain
+  // model overrides specific to the main endpoint.
   for (const key of Object.keys(env)) {
     if (isModelOverrideKey(key) && !profileEnvKeys.has(key)) {
-      delete env[key];
+      env[key] = '';
     }
   }
 
