@@ -3,12 +3,12 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawn } from 'child_process';
 import { CLAUDE_SETTINGS_PATH, TMP_DIR } from './config.js';
 import { buildClaudeEnv, isModelOverrideKey } from './env.js';
 import * as store from './store.js';
 import { green, gray, red } from './color.js';
 import { t } from './i18n.js';
+import { spawnCli } from './spawn.js';
 
 // Read ~/.claude/settings.json (read-only, never write)
 function readMainSettings() {
@@ -138,7 +138,7 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
   console.log(green(t('launch.claude', { name: profileName })));
   console.log(gray(t('launch.cmd_claude', { args: args.join(' ') })));
 
-  const child = spawn('claude', args, {
+  const child = spawnCli('claude', args, {
     stdio: 'inherit',
     env: childEnv,
   });

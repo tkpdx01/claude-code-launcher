@@ -2,11 +2,11 @@
 
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
 import * as store from './store.js';
 import { buildCodexEnv } from './env.js';
 import { green, gray, red, yellow } from './color.js';
 import { t } from './i18n.js';
+import { spawnCli } from './spawn.js';
 
 // Codex v0.120+ forbids overriding reserved provider names (openai, ollama, lmstudio).
 // Auto-fix old profiles that used [model_providers.openai].
@@ -75,7 +75,7 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
   console.log(green(t('launch.codex', { name: profileName })));
   console.log(gray(t('launch.cmd_codex', { home: codexHome, args: args.join(' ') })));
 
-  const child = spawn('codex', args, {
+  const child = spawnCli('codex', args, {
     stdio: 'inherit',
     env,
   });
