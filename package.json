@@ -4,7 +4,7 @@
   "description": "Claude Code / Codex Settings Launcher - Manage multiple profiles with zero dependencies",
   "main": "index.js",
   "bin": {
-    "ccc": "./index.js"
+    "ccc": "index.js"
   },
   "type": "module",
   "scripts": {
