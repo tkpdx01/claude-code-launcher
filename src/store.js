@@ -44,7 +44,8 @@ function parseClaudeProfile(raw) {
   if (raw.type === 'claude') return raw;
   // Old format: full settings.json copy with env.ANTHROPIC_AUTH_TOKEN
   if (raw.env?.ANTHROPIC_AUTH_TOKEN) {
-    const { ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ...restEnv } = raw.env;
+    const { env = {}, ...restSettings } = raw;
+    const { ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ...restEnv } = env;
     const result = {
       type: 'claude',
       apiUrl: ANTHROPIC_BASE_URL || '',
@@ -55,6 +56,7 @@ function parseClaudeProfile(raw) {
       Object.entries(restEnv).filter(([k]) => !k.startsWith('CLAUDE_CODE_') && !k.startsWith('DISABLE_')),
     );
     if (Object.keys(filteredEnv).length > 0) result.env = filteredEnv;
+    if (Object.keys(restSettings).length > 0) result.settings = restSettings;
     return result;
   }
   // Unknown but has apiKey (partially migrated?)
@@ -215,13 +217,14 @@ export function getAllProfiles() {
 
 export function resolveProfile(input) {
   const all = getAllProfiles();
+  const byName = all.find((p) => p.name === input);
+  if (byName) return byName;
   // Try as numeric index (1-based)
   const num = parseInt(input, 10);
   if (!isNaN(num) && num >= 1 && num <= all.length) {
     return all[num - 1];
   }
-  // Try as name
-  return all.find((p) => p.name === input) || null;
+  return null;
 }
 
 export function anyProfileExists(name) {

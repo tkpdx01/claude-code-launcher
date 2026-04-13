@@ -2,6 +2,7 @@ import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { input, select } from '../prompt.js';
 import { promptCodexModel } from '../models.js';
+import { normalizeProfileName, validateProfileName } from '../profile-name.js';
 import { cyan, green, gray, red, yellow, blue, magenta } from '../color.js';
 
 export async function editCommand(args) {
@@ -38,10 +39,15 @@ export async function editCommand(args) {
 
     const baseUrl = await input('Base URL:', curUrl || 'https://api.openai.com/v1');
     const apiKey = await input('OPENAI_API_KEY:', curKey || '');
-    const newName = await input(t('common.profile_name'), profileInfo.name);
+    const newName = normalizeProfileName(await input(t('common.profile_name'), profileInfo.name));
     const model = await promptCodexModel(baseUrl, apiKey, curModel || '');
 
     if (newName && newName !== profileInfo.name) {
+      const validation = validateProfileName(newName);
+      if (validation !== true) {
+        console.log(red(validation));
+        process.exit(1);
+      }
       const check = store.anyProfileExists(newName);
       if (check.exists) {
         console.log(red(t('edit.exists', { name: newName })));
@@ -65,11 +71,16 @@ export async function editCommand(args) {
 
     const apiUrl = await input('ANTHROPIC_BASE_URL:', curUrl || '');
     const apiKey = await input('ANTHROPIC_AUTH_TOKEN:', curKey || '');
-    const newName = await input(t('common.profile_name'), profileInfo.name);
+    const newName = normalizeProfileName(await input(t('common.profile_name'), profileInfo.name));
 
     const updated = { ...existing, apiUrl, apiKey };
 
     if (newName && newName !== profileInfo.name) {
+      const validation = validateProfileName(newName);
+      if (validation !== true) {
+        console.log(red(validation));
+        process.exit(1);
+      }
       const check = store.anyProfileExists(newName);
       if (check.exists) {
         console.log(red(t('edit.exists', { name: newName })));

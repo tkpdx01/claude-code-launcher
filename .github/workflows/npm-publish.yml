@@ -18,7 +18,7 @@ jobs:
           registry-url: https://registry.npmjs.org/
 
       - name: Test
-        run: node index.js help
+        run: npm test
 
       - name: Publish to npm
         run: npm publish --access public

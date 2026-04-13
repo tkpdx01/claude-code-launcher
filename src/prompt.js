@@ -4,8 +4,43 @@
 import readline from 'readline';
 import { cyan, green, gray, dim } from './color.js';
 
+let nonTtyLinesPromise;
+let nonTtyLineIndex = 0;
+
+function loadNonTtyLines() {
+  if (!nonTtyLinesPromise) {
+    nonTtyLinesPromise = new Promise((resolve, reject) => {
+      const chunks = [];
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (chunk) => chunks.push(chunk));
+      process.stdin.on('end', () => {
+        const text = chunks.join('').replace(/\r\n/g, '\n');
+        resolve(text.split('\n'));
+      });
+      process.stdin.on('error', reject);
+    });
+  }
+  return nonTtyLinesPromise;
+}
+
+async function readNonTtyAnswer(defaultValue = '') {
+  const lines = await loadNonTtyLines();
+  if (nonTtyLineIndex >= lines.length) return defaultValue;
+  const answer = lines[nonTtyLineIndex++];
+  return answer.trim() || defaultValue;
+}
+
 // --- Text input ---
 export function input(message, defaultValue = '') {
+  if (!process.stdin.isTTY) {
+    const suffix = defaultValue ? ` ${dim(`(${defaultValue})`)}` : '';
+    process.stdout.write(`${cyan('?')} ${message}${suffix} `);
+    return readNonTtyAnswer(defaultValue).then((answer) => {
+      process.stdout.write('\n');
+      return answer;
+    });
+  }
+
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const suffix = defaultValue ? ` ${dim(`(${defaultValue})`)}` : '';
@@ -79,6 +114,17 @@ export function password(message) {
 
 // --- Confirm (y/n) ---
 export function confirm(message, defaultValue = false) {
+  if (!process.stdin.isTTY) {
+    const hint = defaultValue ? 'Y/n' : 'y/N';
+    process.stdout.write(`${cyan('?')} ${message} ${dim(`(${hint})`)} `);
+    return readNonTtyAnswer('').then((answer) => {
+      process.stdout.write('\n');
+      const a = answer.trim().toLowerCase();
+      if (a === '') return defaultValue;
+      return a === 'y' || a === 'yes';
+    });
+  }
+
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const hint = defaultValue ? 'Y/n' : 'y/N';
