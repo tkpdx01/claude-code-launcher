@@ -41,6 +41,10 @@ export async function newCommand(args) {
   if (profileType === 'codex') {
     const baseUrl = await input('Base URL:', 'https://api.openai.com/v1');
     const apiKey = await input('OPENAI_API_KEY:');
+    if (!apiKey) {
+      console.log(red(t('common.apikey_required')));
+      process.exit(1);
+    }
     const model = await promptCodexModel(baseUrl, apiKey, '');
 
     store.ensureDirs();
@@ -54,6 +58,10 @@ export async function newCommand(args) {
   } else {
     const apiUrl = await input('ANTHROPIC_BASE_URL:', 'https://api.anthropic.com');
     const apiKey = await input('ANTHROPIC_AUTH_TOKEN:');
+    if (!apiKey) {
+      console.log(red(t('common.apikey_required')));
+      process.exit(1);
+    }
 
     store.ensureDirs();
     store.saveClaudeProfile(name, { apiUrl, apiKey });

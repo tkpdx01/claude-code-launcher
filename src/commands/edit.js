@@ -39,6 +39,10 @@ export async function editCommand(args) {
 
     const baseUrl = await input('Base URL:', curUrl || 'https://api.openai.com/v1');
     const apiKey = await input('OPENAI_API_KEY:', curKey || '');
+    if (!apiKey) {
+      console.log(red(t('common.apikey_required')));
+      process.exit(1);
+    }
     const newName = normalizeProfileName(await input(t('common.profile_name'), profileInfo.name));
     const model = await promptCodexModel(baseUrl, apiKey, curModel || '');
 
@@ -71,6 +75,10 @@ export async function editCommand(args) {
 
     const apiUrl = await input('ANTHROPIC_BASE_URL:', curUrl || '');
     const apiKey = await input('ANTHROPIC_AUTH_TOKEN:', curKey || '');
+    if (!apiKey) {
+      console.log(red(t('common.apikey_required')));
+      process.exit(1);
+    }
     const newName = normalizeProfileName(await input(t('common.profile_name'), profileInfo.name));
 
     const updated = { ...existing, apiUrl, apiKey };

@@ -69,6 +69,11 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
     console.log(red(t('common.not_exist', { name: profileName })));
     process.exit(1);
   }
+  if (!profile.apiKey) {
+    console.log(red(t('common.apikey_required')));
+    console.log(red(`  → ccc edit ${profileName}`));
+    process.exit(1);
+  }
 
   // 1. Read main config (read-only)
   const main = readMainSettings();

@@ -46,6 +46,7 @@ const strings = {
     'common.default': '(default)',
     'common.profile_name': 'Profile name:',
     'common.profile_type': 'Profile type:',
+    'common.apikey_required': 'API key cannot be empty',
 
     // List
     'list.footer': '{count} profiles, launch: ccc <name> or ccc <number>',
@@ -153,6 +154,7 @@ const strings = {
     'common.default': '(默认)',
     'common.profile_name': 'Profile 名称:',
     'common.profile_type': 'Profile 类型:',
+    'common.apikey_required': 'API 密钥不能为空',
 
     'list.footer': '{count} 个 profile，启动: ccc <name> 或 ccc <number>',
 
