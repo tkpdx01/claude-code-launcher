@@ -45,8 +45,8 @@ export function input(message, defaultValue = '') {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const suffix = defaultValue ? ` ${dim(`(${defaultValue})`)}` : '';
     rl.question(`${cyan('?')} ${message}${suffix} `, (answer) => {
-      rl.close();
       resolve(answer.trim() || defaultValue);
+      rl.close();
     });
     rl.on('close', () => resolve(defaultValue));
   });
@@ -129,10 +129,10 @@ export function confirm(message, defaultValue = false) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const hint = defaultValue ? 'Y/n' : 'y/N';
     rl.question(`${cyan('?')} ${message} ${dim(`(${hint})`)} `, (answer) => {
-      rl.close();
       const a = answer.trim().toLowerCase();
       if (a === '') resolve(defaultValue);
       else resolve(a === 'y' || a === 'yes');
+      rl.close();
     });
     rl.on('close', () => resolve(defaultValue));
   });
