@@ -102,3 +102,19 @@ test('exact profile names win over numeric index resolution', () => {
     cleanupTempHome(home);
   }
 });
+
+test('Codex config uses analytics table expected by current codex-cli', () => {
+  const result = runNode([
+    '--input-type=module',
+    '-e',
+    [
+      "import * as store from './src/store.js';",
+      "console.log(store.generateCodexConfigToml('https://example.com/v1', 'gpt-5.4'));",
+    ].join(' '),
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^\[analytics\]$/m);
+  assert.match(result.stdout, /^enabled = false$/m);
+  assert.doesNotMatch(result.stdout, /^analytics = false$/m);
+});

@@ -183,7 +183,8 @@ function isCustomOpenAIBaseUrl(baseUrl) {
 
 export function generateCodexConfigToml(baseUrl, model) {
   const lines = ['# Codex profile managed by ccc'];
-  lines.push('analytics = false');
+  lines.push('[analytics]');
+  lines.push('enabled = false');
   const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
   if (model) lines.push(`model = "${model}"`);
   if (isCustomOpenAIBaseUrl(normalized)) {
