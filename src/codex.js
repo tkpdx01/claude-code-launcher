@@ -38,13 +38,20 @@ function fixReservedProviderName(codexHome) {
     }
   }
 
-  // Ensure wire_api and requires_openai_auth exist in the section
-  if (!/wire_api/.test(toml)) {
-    toml = toml.replace(
-      /(\[model_providers\.ccc_openai\][^\[]*)/s,
-      (section) => section.trimEnd() + '\nwire_api = "responses"\nrequires_openai_auth = true\n',
+  const providerSection = /(\[model_providers\.ccc_openai\][^\[]*)/s;
+  toml = toml.replace(providerSection, (section) => {
+    let updated = section.replace(
+      /^\s*requires_openai_auth\s*=\s*true\s*$/m,
+      'env_key = "OPENAI_API_KEY"',
     );
-  }
+    if (!/^\s*env_key\s*=.*$/m.test(updated)) {
+      updated = updated.trimEnd() + '\nenv_key = "OPENAI_API_KEY"\n';
+    }
+    if (!/^\s*wire_api\s*=.*$/m.test(updated)) {
+      updated = updated.trimEnd() + '\nwire_api = "responses"\n';
+    }
+    return updated;
+  });
 
   fs.writeFileSync(configPath, toml);
   console.log(yellow(t('launch.fix_provider')));

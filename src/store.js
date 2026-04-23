@@ -192,8 +192,8 @@ export function generateCodexConfigToml(baseUrl, model) {
     lines.push(`[model_providers.${CCC_OPENAI_COMPAT_PROVIDER}]`);
     lines.push('name = "OpenAI Compatible"');
     lines.push(`base_url = "${normalized}"`);
+    lines.push('env_key = "OPENAI_API_KEY"');
     lines.push('wire_api = "responses"');
-    lines.push('requires_openai_auth = true');
   }
   lines.push('');
   return lines.join('\n');
