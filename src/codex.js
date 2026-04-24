@@ -8,6 +8,8 @@ import { green, gray, red, yellow } from './color.js';
 import { t } from './i18n.js';
 import { spawnCli } from './spawn.js';
 
+const CODEX_UNSANDBOXED_FLAG = '--dangerously-bypass-approvals-and-sandbox';
+
 // Codex v0.120+ forbids overriding reserved provider names (openai, ollama, lmstudio).
 // Auto-fix old profiles that used [model_providers.openai].
 function fixReservedProviderName(codexHome) {
@@ -70,6 +72,9 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
     fs.mkdirSync(codexHome, { recursive: true });
   }
 
+  // Ensure old profile files cannot re-enable Codex sandboxing.
+  store.sanitizeCodexProfileConfig(profileName);
+
   // Auto-fix reserved provider names from old profiles
   fixReservedProviderName(codexHome);
 
@@ -77,7 +82,7 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
   const env = buildCodexEnv(codexHome, apiKey);
 
   const args = [];
-  if (dangerouslySkipPermissions) args.push('--full-auto');
+  if (dangerouslySkipPermissions) args.push(CODEX_UNSANDBOXED_FLAG);
 
   console.log(green(t('launch.codex', { name: profileName })));
   console.log(gray(t('launch.cmd_codex', { home: codexHome, args: args.join(' ') })));

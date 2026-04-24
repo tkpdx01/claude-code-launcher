@@ -137,7 +137,9 @@ export function readCodexProfile(name) {
   if (!fs.existsSync(authPath)) return null;
   try {
     const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-    const configToml = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf-8') : '';
+    const configToml = fs.existsSync(configPath)
+      ? sanitizeCodexConfigToml(fs.readFileSync(configPath, 'utf-8'))
+      : '';
     return { auth, configToml };
   } catch {
     return null;
@@ -149,7 +151,7 @@ export function saveCodexProfile(name, auth, configToml) {
   const dir = codexDir(name);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify(auth, null, 2) + '\n');
-  fs.writeFileSync(path.join(dir, 'config.toml'), configToml);
+  fs.writeFileSync(path.join(dir, 'config.toml'), sanitizeCodexConfigToml(configToml));
 }
 
 export function deleteCodexProfile(name) {
@@ -183,12 +185,15 @@ function isCustomOpenAIBaseUrl(baseUrl) {
 
 export function generateCodexConfigToml(baseUrl, model) {
   const lines = ['# Codex profile managed by ccc'];
-  lines.push('[analytics]');
-  lines.push('enabled = false');
   const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
   if (model) lines.push(`model = "${model}"`);
   if (isCustomOpenAIBaseUrl(normalized)) {
     lines.push(`model_provider = "${CCC_OPENAI_COMPAT_PROVIDER}"`);
+  }
+  lines.push('');
+  lines.push('[analytics]');
+  lines.push('enabled = false');
+  if (isCustomOpenAIBaseUrl(normalized)) {
     lines.push('');
     lines.push(`[model_providers.${CCC_OPENAI_COMPAT_PROVIDER}]`);
     lines.push('name = "OpenAI Compatible"');
@@ -198,6 +203,55 @@ export function generateCodexConfigToml(baseUrl, model) {
   }
   lines.push('');
   return lines.join('\n');
+}
+
+export function sanitizeCodexConfigToml(configToml = '') {
+  const newline = configToml.includes('\r\n') ? '\r\n' : '\n';
+  const lines = configToml.split(/\r?\n/);
+  const filtered = lines.filter((line) => (
+    !/^\s*sandbox(?:_mode|_permissions)?\s*=/.test(line)
+  ));
+  return removeEmptyTomlSection(filtered, 'windows').join(newline);
+}
+
+function removeEmptyTomlSection(lines, sectionName) {
+  const result = [];
+  for (let i = 0; i < lines.length;) {
+    const header = lines[i].match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/);
+    if (!header || header[1].trim().toLowerCase() !== sectionName) {
+      result.push(lines[i]);
+      i += 1;
+      continue;
+    }
+
+    let j = i + 1;
+    const body = [];
+    while (j < lines.length && !/^\s*\[[^\]]+\]\s*(?:#.*)?$/.test(lines[j])) {
+      body.push(lines[j]);
+      j += 1;
+    }
+
+    const hasContent = body.some((line) => {
+      const trimmed = line.trim();
+      return trimmed && !trimmed.startsWith('#');
+    });
+    if (hasContent) {
+      result.push(lines[i], ...body);
+    }
+    i = j;
+  }
+  return result;
+}
+
+export function sanitizeCodexProfileConfig(name) {
+  const configPath = path.join(codexDir(name), 'config.toml');
+  if (!fs.existsSync(configPath)) return;
+
+  const original = fs.readFileSync(configPath, 'utf-8');
+  const sanitized = sanitizeCodexConfigToml(original);
+  if (sanitized !== original) {
+    fs.writeFileSync(configPath, sanitized);
+  }
 }
 
 export function createCodexProfile(name, apiKey, baseUrl, model) {
