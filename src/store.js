@@ -6,6 +6,7 @@ import {
   CONFIG_DIR,
   PROFILES_DIR,
   CODEX_PROFILES_DIR,
+  CODEX_HOME_PATH,
 } from './config.js';
 
 // ---- Directory setup ----
@@ -111,6 +112,8 @@ export function getClaudeCredentials(name) {
 
 const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const CCC_OPENAI_COMPAT_PROVIDER = 'ccc_openai';
+const GPT_55_MODEL = 'gpt-5.5';
+const GPT_55_CATALOG_FILE = 'model-catalog.gpt-5.5.json';
 
 function codexDir(name) {
   return path.join(CODEX_PROFILES_DIR, name);
@@ -183,6 +186,10 @@ function isCustomOpenAIBaseUrl(baseUrl) {
   return normalized && normalized !== normalizeBaseUrl(OPENAI_DEFAULT_BASE_URL);
 }
 
+function isGpt55Model(model) {
+  return (model || '').trim().toLowerCase() === GPT_55_MODEL;
+}
+
 export function generateCodexConfigToml(baseUrl, model) {
   const lines = ['# Codex profile managed by ccc'];
   const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
@@ -203,6 +210,107 @@ export function generateCodexConfigToml(baseUrl, model) {
   }
   lines.push('');
   return lines.join('\n');
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findFirstTomlSection(lines) {
+  const idx = lines.findIndex((line) => /^\s*\[[^\]]+\]\s*(?:#.*)?$/.test(line));
+  return idx >= 0 ? idx : lines.length;
+}
+
+function updateRootKey(configToml, key, value) {
+  const newline = configToml.includes('\r\n') ? '\r\n' : '\n';
+  const lines = configToml.split(/\r?\n/);
+  const firstSection = findFirstTomlSection(lines);
+  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`);
+  let found = false;
+  const next = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (i < firstSection && keyPattern.test(lines[i])) {
+      found = true;
+      if (value !== null) next.push(`${key} = ${value}`);
+      continue;
+    }
+    next.push(lines[i]);
+  }
+
+  if (!found && value !== null) {
+    let insertAt = firstSection;
+    while (insertAt > 0 && next[insertAt - 1]?.trim() === '') insertAt -= 1;
+    next.splice(insertAt, 0, `${key} = ${value}`);
+  }
+
+  return next.join(newline);
+}
+
+function updateTomlSection(configToml, sectionName, updateBody) {
+  const newline = configToml.includes('\r\n') ? '\r\n' : '\n';
+  const lines = configToml.split(/\r?\n/);
+  const headerPattern = new RegExp(`^\\s*\\[${escapeRegExp(sectionName)}\\]\\s*(?:#.*)?$`);
+  const start = lines.findIndex((line) => headerPattern.test(line));
+
+  if (start < 0) {
+    const body = updateBody([]);
+    return [
+      configToml.trimEnd(),
+      '',
+      `[${sectionName}]`,
+      ...body,
+      '',
+    ].join(newline);
+  }
+
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[[^\]]+\]\s*(?:#.*)?$/.test(lines[end])) end += 1;
+
+  const body = updateBody(lines.slice(start + 1, end));
+  lines.splice(start + 1, end - start - 1, ...body);
+  return lines.join(newline);
+}
+
+function upsertBodyKey(lines, key, value) {
+  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`);
+  const idx = lines.findIndex((line) => keyPattern.test(line));
+  if (idx >= 0) {
+    lines[idx] = `${key} = ${value}`;
+  } else {
+    let insertAt = lines.length;
+    while (insertAt > 0 && lines[insertAt - 1]?.trim() === '') insertAt -= 1;
+    lines.splice(insertAt, 0, `${key} = ${value}`);
+  }
+}
+
+function updateCodexProviderConfig(configToml, baseUrl) {
+  const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
+  if (!isCustomOpenAIBaseUrl(normalized)) return configToml;
+
+  return updateTomlSection(configToml, `model_providers.${CCC_OPENAI_COMPAT_PROVIDER}`, (body) => {
+    const next = [...body].filter((line) => !/^\s*requires_openai_auth\s*=/.test(line));
+    upsertBodyKey(next, 'name', '"OpenAI Compatible"');
+    upsertBodyKey(next, 'base_url', `"${normalized}"`);
+    upsertBodyKey(next, 'env_key', '"OPENAI_API_KEY"');
+    upsertBodyKey(next, 'wire_api', '"responses"');
+    return next;
+  });
+}
+
+function updateCodexConfigToml(configToml, baseUrl, model) {
+  let next = sanitizeCodexConfigToml(configToml || '');
+  if (!next.trim()) return generateCodexConfigToml(baseUrl, model);
+
+  const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
+  next = updateRootKey(next, 'model', model ? `"${model}"` : null);
+  next = updateRootKey(
+    next,
+    'model_provider',
+    isCustomOpenAIBaseUrl(normalized) ? `"${CCC_OPENAI_COMPAT_PROVIDER}"` : null,
+  );
+  next = updateCodexProviderConfig(next, normalized);
+  return sanitizeCodexConfigToml(next);
 }
 
 export function sanitizeCodexConfigToml(configToml = '') {
@@ -254,9 +362,59 @@ export function sanitizeCodexProfileConfig(name) {
   }
 }
 
+function ensureGpt55CatalogFile(name) {
+  const target = path.join(codexDir(name), GPT_55_CATALOG_FILE);
+  if (fs.existsSync(target)) return true;
+
+  const source = path.join(CODEX_HOME_PATH, GPT_55_CATALOG_FILE);
+  if (!fs.existsSync(source)) return false;
+
+  if (!fs.existsSync(path.dirname(target))) fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  return true;
+}
+
+function ensureCodexModelCapabilities(name, configToml, model) {
+  if (!isGpt55Model(model)) return configToml;
+
+  let next = configToml;
+  next = updateRootKey(next, 'model_reasoning_effort', '"xhigh"');
+  if (ensureGpt55CatalogFile(name)) {
+    next = updateRootKey(next, 'model_catalog_json', `'.\\${GPT_55_CATALOG_FILE}'`);
+  }
+  return next;
+}
+
+export function copyCodexProfileSupportFiles(name, targetDir) {
+  const dir = codexDir(name);
+  if (!fs.existsSync(dir) || !fs.existsSync(targetDir)) return;
+
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isFile() && /^model-catalog.*\.json$/i.test(entry.name)) {
+      fs.copyFileSync(path.join(dir, entry.name), path.join(targetDir, entry.name));
+    }
+  }
+}
+
 export function createCodexProfile(name, apiKey, baseUrl, model) {
   const auth = { auth_mode: 'apikey', OPENAI_API_KEY: apiKey };
-  const configToml = generateCodexConfigToml(baseUrl, model);
+  const configToml = ensureCodexModelCapabilities(
+    name,
+    generateCodexConfigToml(baseUrl, model),
+    model,
+  );
+  saveCodexProfile(name, auth, configToml);
+}
+
+export function updateCodexProfile(name, apiKey, baseUrl, model) {
+  const existing = readCodexProfile(name);
+  const auth = { auth_mode: 'apikey', OPENAI_API_KEY: apiKey };
+  const baseConfig = existing?.configToml || '';
+  const configToml = ensureCodexModelCapabilities(
+    name,
+    updateCodexConfigToml(baseConfig, baseUrl, model),
+    model,
+  );
   saveCodexProfile(name, auth, configToml);
 }
 

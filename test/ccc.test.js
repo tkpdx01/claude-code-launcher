@@ -142,6 +142,73 @@ test('Codex config sanitizer removes sandbox settings', () => {
   assert.doesNotMatch(result.stdout, /^\[windows\]$/m);
 });
 
+test('Codex profile updates preserve gpt-5.5 capability config', () => {
+  const home = makeTempHome();
+  try {
+    const result = runNode([
+      '--input-type=module',
+      '-e',
+      [
+        "import fs from 'node:fs';",
+        "import os from 'node:os';",
+        "import path from 'node:path';",
+        "import * as store from './src/store.js';",
+        "const dir = path.join(os.homedir(), '.ccc', 'codex-profiles', 'demo');",
+        "fs.mkdirSync(dir, { recursive: true });",
+        "fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'old-key' }, null, 2) + '\\n');",
+        "fs.writeFileSync(path.join(dir, 'model-catalog.gpt-5.5.json'), '{}\\n');",
+        "fs.writeFileSync(path.join(dir, 'config.toml'), 'model = \"gpt-5.5\"\\nmodel_provider = \"ccc_openai\"\\nmodel_reasoning_effort = \"xhigh\"\\nmodel_catalog_json = \\'.\\\\\\\\model-catalog.gpt-5.5.json\\'\\nsandbox_mode = \"danger-full-access\"\\n\\n[model_providers.ccc_openai]\\nname = \"OpenAI Compatible\"\\nbase_url = \"https://old.example/v1\"\\nrequires_openai_auth = true\\nwire_api = \"responses\"\\n\\n[projects.\\'C:\\\\\\\\repo\\']\\ntrust_level = \"trusted\"\\n\\n[windows]\\nsandbox = \"elevated\"\\n');",
+        "store.updateCodexProfile('demo', 'new-key', 'https://new.example/v1', 'gpt-5.5');",
+        "console.log(fs.readFileSync(path.join(dir, 'config.toml'), 'utf8'));",
+      ].join(' '),
+    ], {
+      env: { HOME: home, USERPROFILE: home },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^model = "gpt-5.5"$/m);
+    assert.match(result.stdout, /^model_reasoning_effort = "xhigh"$/m);
+    assert.match(result.stdout, /^model_catalog_json = '\.\\model-catalog\.gpt-5\.5\.json'$/m);
+    assert.match(result.stdout, /^base_url = "https:\/\/new\.example\/v1"$/m);
+    assert.match(result.stdout, /^env_key = "OPENAI_API_KEY"$/m);
+    assert.match(result.stdout, /^\[projects\.'C:\\\\repo'\]$/m);
+    assert.doesNotMatch(result.stdout, /sandbox/i);
+    assert.doesNotMatch(result.stdout, /requires_openai_auth/);
+  } finally {
+    cleanupTempHome(home);
+  }
+});
+
+test('Codex support files copy to apply target', () => {
+  const home = makeTempHome();
+  try {
+    const result = runNode([
+      '--input-type=module',
+      '-e',
+      [
+        "import fs from 'node:fs';",
+        "import os from 'node:os';",
+        "import path from 'node:path';",
+        "import * as store from './src/store.js';",
+        "const dir = path.join(os.homedir(), '.ccc', 'codex-profiles', 'demo');",
+        "const target = path.join(os.homedir(), '.codex');",
+        "fs.mkdirSync(dir, { recursive: true });",
+        "fs.mkdirSync(target, { recursive: true });",
+        "fs.writeFileSync(path.join(dir, 'model-catalog.gpt-5.5.json'), '{}\\n');",
+        "store.copyCodexProfileSupportFiles('demo', target);",
+        "console.log(fs.existsSync(path.join(target, 'model-catalog.gpt-5.5.json')));",
+      ].join(' '),
+    ], {
+      env: { HOME: home, USERPROFILE: home },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), 'true');
+  } finally {
+    cleanupTempHome(home);
+  }
+});
+
 test('Codex -d launches without sandbox and cleans old profile config', () => {
   const home = makeTempHome();
   try {

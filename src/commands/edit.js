@@ -57,11 +57,14 @@ export async function editCommand(args) {
         console.log(red(t('edit.exists', { name: newName })));
         process.exit(1);
       }
-      store.createCodexProfile(newName, apiKey, baseUrl, model);
+      store.updateCodexProfile(profileInfo.name, apiKey, baseUrl, model);
+      const profile = store.readCodexProfile(profileInfo.name);
+      store.saveCodexProfile(newName, profile.auth, profile.configToml);
+      store.copyCodexProfileSupportFiles(profileInfo.name, store.getCodexProfileDir(newName));
       store.deleteCodexProfile(profileInfo.name);
       console.log(green(`\n${t('edit.renamed', { name: newName })}`));
     } else {
-      store.createCodexProfile(profileInfo.name, apiKey, baseUrl, model);
+      store.updateCodexProfile(profileInfo.name, apiKey, baseUrl, model);
       console.log(green(`\n${t('edit.updated', { name: profileInfo.name })}`));
     }
   } else {
