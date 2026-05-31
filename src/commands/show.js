@@ -1,7 +1,7 @@
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { select } from '../prompt.js';
-import { cyan, gray, red, yellow, white, blue, magenta, bold } from '../color.js';
+import { cyan, gray, red, yellow, white, blue, magenta, green, bold } from '../color.js';
 
 function maskKey(key) {
   if (!key) return t('common.not_set');
@@ -19,7 +19,7 @@ export async function showCommand(args) {
 
   if (!args[0]) {
     const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
+      const tag = p.type === 'codex' ? blue('[Codex]') : p.type === 'deepseek' ? green('[DeepSeek]') : magenta('[Claude]');
       return { name: `${tag} ${p.name}`, value: p };
     });
     profileInfo = await select(t('pick.show'), choices);
@@ -45,6 +45,22 @@ export async function showCommand(args) {
       console.log(`\n  ${cyan('config.toml')}:`);
       for (const line of profile.configToml.split('\n')) {
         console.log(`    ${gray(line)}`);
+      }
+    }
+  } else if (profileInfo.type === 'deepseek') {
+    const profile = store.readClaudeProfile(profileInfo.name);
+    const { apiKey, apiUrl } = store.getClaudeCredentials(profileInfo.name);
+
+    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${green('[DeepSeek]')}`);
+    console.log();
+    console.log(`  ${cyan('API URL')}: ${white(apiUrl || t('common.not_set'))}`);
+    console.log(`  ${cyan('API Key')}: ${yellow(maskKey(apiKey))}`);
+    console.log(`  ${cyan('Model')}: ${white(profile?.model || t('common.default'))}`);
+
+    if (profile?.env && Object.keys(profile.env).length > 0) {
+      console.log(`\n  ${cyan(t('show.extra_env'))}:`);
+      for (const [k, v] of Object.entries(profile.env)) {
+        console.log(`    ${gray(k)}: ${gray(v)}`);
       }
     }
   } else {

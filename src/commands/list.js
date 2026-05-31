@@ -1,6 +1,6 @@
 import * as store from '../store.js';
 import { t } from '../i18n.js';
-import { cyan, gray, blue, magenta, yellow } from '../color.js';
+import { cyan, gray, blue, magenta, yellow, green } from '../color.js';
 
 export function listCommand() {
   const all = store.getAllProfiles();
@@ -23,7 +23,7 @@ export function listCommand() {
   });
 
   const w0 = Math.max(1, ...rows.map((r) => r.num.length));
-  const w1 = 6;
+  const w1 = 8;
   const w2 = Math.max(7, ...rows.map((r) => r.name.length));
 
   console.log();
@@ -34,7 +34,10 @@ export function listCommand() {
 
   for (const r of rows) {
     const num = gray(r.num.padEnd(w0));
-    const type = r.rawType === 'codex' ? blue('Codex'.padEnd(w1)) : magenta('Claude'.padEnd(w1 - 1) + ' ');
+    let type;
+    if (r.rawType === 'codex') type = blue('Codex'.padEnd(w1));
+    else if (r.rawType === 'deepseek') type = green('DeepSeek'.padEnd(w1));
+    else type = magenta('Claude'.padEnd(w1));
     console.log(`  ${num}  ${type}  ${r.name.padEnd(w2)}  ${r.url}`);
   }
 

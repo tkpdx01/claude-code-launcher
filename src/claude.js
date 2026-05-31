@@ -75,6 +75,8 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
     process.exit(1);
   }
 
+  const isDeepseek = profile.type === 'deepseek';
+
   // 1. Read main config (read-only)
   const main = readMainSettings();
 
@@ -85,6 +87,11 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
   merged.env = merged.env || {};
   if (profile.apiKey) merged.env.ANTHROPIC_AUTH_TOKEN = profile.apiKey;
   if (profile.apiUrl) merged.env.ANTHROPIC_BASE_URL = profile.apiUrl;
+
+  // Inject model for DeepSeek profiles
+  if (isDeepseek && profile.model) {
+    merged.env.ANTHROPIC_MODEL = profile.model;
+  }
 
   // Disable telemetry (granular, avoids blocking GrowthBook feature flags)
   merged.env.DISABLE_TELEMETRY = '1';
@@ -140,7 +147,8 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
   const args = ['--settings', tmpPath];
   if (dangerouslySkipPermissions) args.push('--dangerously-skip-permissions');
 
-  console.log(green(t('launch.claude', { name: profileName })));
+  const launchKey = isDeepseek ? 'launch.deepseek' : 'launch.claude';
+  console.log(green(t(launchKey, { name: profileName })));
   console.log(gray(t('launch.cmd_claude', { args: args.join(' ') })));
 
   const child = spawnCli('claude', args, {

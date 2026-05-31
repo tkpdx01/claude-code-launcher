@@ -41,14 +41,14 @@ if (flags.has('-h') || flags.has('--help') || cmd === 'help') {
 
 function launchProfile(name, type, d) {
   if (type === 'codex') launchCodex(name, d);
-  else launchClaude(name, d);
+  else launchClaude(name, d); // both 'claude' and 'deepseek' use Claude Code
 }
 
 async function pickProfile(messageKey) {
   const all = store.getAllProfiles();
   if (all.length === 0) return null;
   const choices = all.map((p, i) => {
-    const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
+    const tag = p.type === 'codex' ? blue('[Codex]') : p.type === 'deepseek' ? cyan('[DeepSeek]') : magenta('[Claude]');
     return { name: `${gray(String(i + 1).padStart(2))}  ${tag} ${p.name}`, value: p };
   });
   return select(t(messageKey), choices);

@@ -36,12 +36,12 @@ function getClaudeNames() {
 }
 
 // Parse profile from raw JSON — handles both old (full settings.json) and new (slim) formats.
-// Returns normalized shape: { type, apiUrl, apiKey, env?, settings? }
+// Returns normalized shape: { type, apiUrl, apiKey, env?, settings?, model? }
 // Does NOT write to disk — callers decide whether to persist.
 function parseClaudeProfile(raw) {
   if (!raw || typeof raw !== 'object') return null;
   // New format: has "type" field
-  if (raw.type === 'claude') return raw;
+  if (raw.type === 'claude' || raw.type === 'deepseek') return raw;
   // Old format: full settings.json copy with env.ANTHROPIC_AUTH_TOKEN
   if (raw.env?.ANTHROPIC_AUTH_TOKEN) {
     const { env = {}, ...restSettings } = raw;
@@ -209,7 +209,11 @@ export function createCodexProfile(name, apiKey, baseUrl, model) {
 // ---- Unified (Claude + Codex) ----
 
 export function getAllProfiles() {
-  const claude = getClaudeNames().map((name) => ({ name, type: 'claude' }));
+  const claude = getClaudeNames().map((name) => {
+    const profile = readClaudeProfile(name);
+    const type = profile?.type === 'deepseek' ? 'deepseek' : 'claude';
+    return { name, type };
+  });
   const codex = getCodexNames().map((name) => ({ name, type: 'codex' }));
   return [...claude, ...codex].sort((a, b) =>
     a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' }),
@@ -229,7 +233,11 @@ export function resolveProfile(input) {
 }
 
 export function anyProfileExists(name) {
-  if (claudeProfileExists(name)) return { exists: true, type: 'claude' };
+  if (claudeProfileExists(name)) {
+    const profile = readClaudeProfile(name);
+    const type = profile?.type === 'deepseek' ? 'deepseek' : 'claude';
+    return { exists: true, type };
+  }
   if (codexProfileExists(name)) return { exists: true, type: 'codex' };
   return { exists: false, type: null };
 }

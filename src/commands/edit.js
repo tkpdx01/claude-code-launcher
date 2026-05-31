@@ -5,6 +5,13 @@ import { promptCodexModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
 import { cyan, green, gray, red, yellow, blue, magenta } from '../color.js';
 
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
+const DEEPSEEK_MODELS = [
+  { name: 'deepseek-chat (V3)', value: 'deepseek-chat' },
+  { name: 'deepseek-reasoner (R1)', value: 'deepseek-reasoner' },
+  { name: t('models.manual'), value: '__manual__' },
+];
+
 export async function editCommand(args) {
   const all = store.getAllProfiles();
   if (all.length === 0) {
@@ -16,7 +23,7 @@ export async function editCommand(args) {
 
   if (!args[0]) {
     const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
+      const tag = p.type === 'codex' ? blue('[Codex]') : p.type === 'deepseek' ? cyan('[DeepSeek]') : magenta('[Claude]');
       return { name: `${tag} ${p.name}`, value: p };
     });
     profileInfo = await select(t('pick.edit'), choices);
@@ -62,6 +69,52 @@ export async function editCommand(args) {
       console.log(green(`\n${t('edit.renamed', { name: newName })}`));
     } else {
       store.createCodexProfile(profileInfo.name, apiKey, baseUrl, model);
+      console.log(green(`\n${t('edit.updated', { name: profileInfo.name })}`));
+    }
+  } else if (profileInfo.type === 'deepseek') {
+    const existing = store.readClaudeProfile(profileInfo.name) || {};
+    const { apiKey: curKey } = store.getClaudeCredentials(profileInfo.name);
+    const curModel = existing.model || '';
+
+    console.log(cyan(`\n${t('edit.current', { name: profileInfo.name, tag: cyan('[DeepSeek]') })}:`));
+    console.log(gray(`  API Key: ${curKey ? curKey.substring(0, 10) + '...' : t('common.not_set')}`));
+    console.log(gray(`  Model: ${curModel || t('common.default')}`));
+    console.log();
+
+    const apiKey = await input('DeepSeek API Key:', curKey || '');
+    if (!apiKey) {
+      console.log(red(t('common.apikey_required')));
+      process.exit(1);
+    }
+
+    // Model selection
+    let defaultIdx = DEEPSEEK_MODELS.findIndex((m) => m.value === curModel);
+    if (defaultIdx < 0) defaultIdx = 0;
+    let model = await select('Model:', DEEPSEEK_MODELS, defaultIdx);
+    if (model === '__manual__') {
+      model = await input(t('models.prompt'), curModel);
+    }
+
+    const newName = normalizeProfileName(await input(t('common.profile_name'), profileInfo.name));
+
+    const updated = { ...existing, apiUrl: DEEPSEEK_BASE_URL, apiKey, model, type: 'deepseek' };
+
+    if (newName && newName !== profileInfo.name) {
+      const validation = validateProfileName(newName);
+      if (validation !== true) {
+        console.log(red(validation));
+        process.exit(1);
+      }
+      const check = store.anyProfileExists(newName);
+      if (check.exists) {
+        console.log(red(t('edit.exists', { name: newName })));
+        process.exit(1);
+      }
+      store.saveClaudeProfile(newName, updated);
+      store.deleteClaudeProfile(profileInfo.name);
+      console.log(green(`\n${t('edit.renamed', { name: newName })}`));
+    } else {
+      store.saveClaudeProfile(profileInfo.name, updated);
       console.log(green(`\n${t('edit.updated', { name: profileInfo.name })}`));
     }
   } else {

@@ -59,8 +59,10 @@ const strings = {
     'new.exists': 'Profile "{name}" already exists ({type}), overwrite?',
     'new.created_codex': 'Created Codex profile "{name}"',
     'new.created_claude': 'Created Claude profile "{name}"',
+    'new.created_deepseek': 'Created DeepSeek profile "{name}"',
     'new.launch_codex': 'Launch Codex now?',
     'new.launch_claude': 'Launch Claude now?',
+    'new.launch_deepseek': 'Launch Claude Code (DeepSeek) now?',
 
     // Edit
     'edit.current': 'Current config ({name}) {tag}:',
@@ -86,6 +88,7 @@ const strings = {
     // Launch
     'launch.claude': 'Launch Claude Code: {name}',
     'launch.codex': 'Launch Codex: {name}',
+    'launch.deepseek': 'Launch Claude Code (DeepSeek): {name}',
     'launch.failed': 'Launch failed: {msg}',
     'launch.cmd_claude': 'Command: claude {args}',
     'launch.cmd_codex': 'CODEX_HOME={home} codex {args}',
@@ -165,8 +168,10 @@ const strings = {
     'new.exists': 'Profile "{name}" 已存在（{type}），是否覆盖？',
     'new.created_codex': '已创建 Codex profile "{name}"',
     'new.created_claude': '已创建 Claude profile "{name}"',
+    'new.created_deepseek': '已创建 DeepSeek profile "{name}"',
     'new.launch_codex': '现在启动 Codex？',
     'new.launch_claude': '现在启动 Claude？',
+    'new.launch_deepseek': '现在启动 Claude Code (DeepSeek)？',
 
     'edit.current': '当前配置 ({name}) {tag}:',
     'edit.renamed': '已重命名为 "{name}" 并保存',
@@ -187,6 +192,7 @@ const strings = {
 
     'launch.claude': '启动 Claude Code: {name}',
     'launch.codex': '启动 Codex: {name}',
+    'launch.deepseek': '启动 Claude Code (DeepSeek): {name}',
     'launch.failed': '启动失败: {msg}',
     'launch.cmd_claude': '命令: claude {args}',
     'launch.cmd_codex': 'CODEX_HOME={home} codex {args}',

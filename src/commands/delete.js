@@ -1,7 +1,7 @@
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { confirm, select } from '../prompt.js';
-import { green, red, yellow, blue, magenta } from '../color.js';
+import { green, red, yellow, blue, magenta, cyan } from '../color.js';
 
 export async function deleteCommand(args) {
   const all = store.getAllProfiles();
@@ -14,7 +14,7 @@ export async function deleteCommand(args) {
 
   if (!args[0]) {
     const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
+      const tag = p.type === 'codex' ? blue('[Codex]') : p.type === 'deepseek' ? cyan('[DeepSeek]') : magenta('[Claude]');
       return { name: `${tag} ${p.name}`, value: p };
     });
     profileInfo = await select(t('pick.delete'), choices);
@@ -26,7 +26,7 @@ export async function deleteCommand(args) {
     }
   }
 
-  const typeLabel = profileInfo.type === 'codex' ? 'Codex' : 'Claude';
+  const typeLabel = profileInfo.type === 'codex' ? 'Codex' : profileInfo.type === 'deepseek' ? 'DeepSeek' : 'Claude';
   const ok = await confirm(t('delete.confirm', { type: typeLabel, name: profileInfo.name }), false);
   if (!ok) {
     console.log(yellow(t('common.cancelled')));
@@ -36,7 +36,7 @@ export async function deleteCommand(args) {
   if (profileInfo.type === 'codex') {
     store.deleteCodexProfile(profileInfo.name);
   } else {
-    store.deleteClaudeProfile(profileInfo.name);
+    store.deleteClaudeProfile(profileInfo.name); // deepseek also stored in profiles/
   }
 
   console.log(green(t('delete.done', { type: typeLabel, name: profileInfo.name })));

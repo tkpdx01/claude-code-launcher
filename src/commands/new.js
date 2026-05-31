@@ -3,9 +3,15 @@ import { t } from '../i18n.js';
 import { input, confirm, select } from '../prompt.js';
 import { promptCodexModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
-import { green, red, yellow, blue, magenta } from '../color.js';
+import { green, red, yellow, blue, magenta, cyan } from '../color.js';
 import { launchClaude } from '../claude.js';
 import { launchCodex } from '../codex.js';
+
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
+const DEEPSEEK_MODELS = [
+  { name: 'deepseek-chat (V3)', value: 'deepseek-chat' },
+  { name: 'deepseek-reasoner (R1)', value: 'deepseek-reasoner' },
+];
 
 export async function newCommand(args) {
   let name = normalizeProfileName(args[0] || '');
@@ -14,6 +20,7 @@ export async function newCommand(args) {
   const profileType = await select(t('common.profile_type'), [
     { name: `${magenta('[Claude]')} Claude Code`, value: 'claude' },
     { name: `${blue('[Codex]')}  OpenAI Codex`, value: 'codex' },
+    { name: `${cyan('[DeepSeek]')} DeepSeek`, value: 'deepseek' },
   ]);
 
   if (!name) {
@@ -27,7 +34,7 @@ export async function newCommand(args) {
 
   const existing = store.anyProfileExists(name);
   if (existing.exists) {
-    const typeLabel = existing.type === 'codex' ? 'Codex' : 'Claude';
+    const typeLabel = existing.type === 'codex' ? 'Codex' : existing.type === 'deepseek' ? 'DeepSeek' : 'Claude';
     const overwrite = await confirm(t('new.exists', { name, type: typeLabel }), false);
     if (!overwrite) {
       console.log(yellow(t('common.cancelled')));
@@ -49,11 +56,28 @@ export async function newCommand(args) {
 
     store.ensureDirs();
     store.createCodexProfile(name, apiKey, baseUrl, model);
-    if (replacedProfile?.type === 'claude') store.deleteClaudeProfile(replacedProfile.name);
+    if (replacedProfile?.type === 'claude' || replacedProfile?.type === 'deepseek') store.deleteClaudeProfile(replacedProfile.name);
     console.log(green(`\n${t('new.created_codex', { name })}`));
 
     if (await confirm(t('new.launch_codex'), false)) {
       launchCodex(name);
+    }
+  } else if (profileType === 'deepseek') {
+    const apiKey = await input('DeepSeek API Key:');
+    if (!apiKey) {
+      console.log(red(t('common.apikey_required')));
+      process.exit(1);
+    }
+    const model = await select('Model:', DEEPSEEK_MODELS);
+
+    store.ensureDirs();
+    store.saveClaudeProfile(name, { apiUrl: DEEPSEEK_BASE_URL, apiKey, model, type: 'deepseek' });
+    if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
+    if (replacedProfile?.type === 'claude') store.deleteClaudeProfile(replacedProfile.name);
+    console.log(green(`\n${t('new.created_deepseek', { name })}`));
+
+    if (await confirm(t('new.launch_deepseek'), false)) {
+      launchClaude(name);
     }
   } else {
     const apiUrl = await input('ANTHROPIC_BASE_URL:', 'https://api.anthropic.com');
@@ -66,6 +90,7 @@ export async function newCommand(args) {
     store.ensureDirs();
     store.saveClaudeProfile(name, { apiUrl, apiKey });
     if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
+    if (replacedProfile?.type === 'deepseek') store.deleteClaudeProfile(replacedProfile.name);
     console.log(green(`\n${t('new.created_claude', { name })}`));
 
     if (await confirm(t('new.launch_claude'), false)) {
