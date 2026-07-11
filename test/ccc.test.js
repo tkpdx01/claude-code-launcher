@@ -118,3 +118,31 @@ test('Codex config uses analytics table expected by current codex-cli', () => {
   assert.match(result.stdout, /^enabled = false$/m);
   assert.doesNotMatch(result.stdout, /^analytics = false$/m);
 });
+
+test('Claude settings default to skipping the WebFetch preflight', () => {
+  const result = runNode([
+    '--input-type=module',
+    '-e',
+    [
+      "import { applyClaudeDefaults } from './src/claude-settings.js';",
+      'console.log(JSON.stringify(applyClaudeDefaults({})));',
+    ].join(' '),
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.trim()), { skipWebFetchPreflight: true });
+});
+
+test('explicit WebFetch preflight setting overrides the launcher default', () => {
+  const result = runNode([
+    '--input-type=module',
+    '-e',
+    [
+      "import { applyClaudeDefaults } from './src/claude-settings.js';",
+      'console.log(JSON.stringify(applyClaudeDefaults({ skipWebFetchPreflight: false })));',
+    ].join(' '),
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.trim()), { skipWebFetchPreflight: false });
+});

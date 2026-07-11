@@ -30,6 +30,11 @@ Profiles store only API URL + key (~5 lines). At launch, your global
 `settings.json` is read (never written), merged with credentials, and
 passed to `claude` / `codex` via a temp file. Nothing is polluted.
 
+Claude launches default to `skipWebFetchPreflight: true`, so WebFetch does
+not depend on Anthropic's domain preflight service when using custom or
+restricted endpoints. An explicit `false` in the global settings or profile
+settings overrides this default.
+
 ## Commands
 
 | | |

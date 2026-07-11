@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { CLAUDE_SETTINGS_PATH, TMP_DIR } from './config.js';
+import { applyClaudeDefaults } from './claude-settings.js';
 import { buildClaudeEnv, isModelOverrideKey } from './env.js';
 import * as store from './store.js';
 import { green, gray, red } from './color.js';
@@ -82,6 +83,7 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false) {
 
   // 2. Deep merge profile.settings overrides into main config copy
   const merged = deepMerge(structuredClone(main), profile.settings || {});
+  applyClaudeDefaults(merged);
 
   // 3. Inject required env into merged settings
   merged.env = merged.env || {};

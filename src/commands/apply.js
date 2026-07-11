@@ -3,6 +3,7 @@ import path from 'path';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { CLAUDE_SETTINGS_PATH, CODEX_HOME_PATH } from '../config.js';
+import { applyClaudeDefaults } from '../claude-settings.js';
 import { isModelOverrideKey } from '../env.js';
 import { select, confirm } from '../prompt.js';
 import { green, gray, red, yellow, blue, magenta } from '../color.js';
@@ -92,6 +93,7 @@ function applyClaude(name) {
     }
   }
 
+  applyClaudeDefaults(settings);
   settings.hasCompletedOnboarding = true;
 
   const dir = path.dirname(CLAUDE_SETTINGS_PATH);
