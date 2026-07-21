@@ -2,7 +2,7 @@
 // Uses Node built-in readline + raw mode for arrow-key selection
 
 import readline from 'readline';
-import { cyan, green, gray, dim } from './color.js';
+import { bold, cyan, green, gray, dim } from './color.js';
 
 let nonTtyLinesPromise;
 let nonTtyLineIndex = 0;
@@ -53,7 +53,15 @@ export function input(message, defaultValue = '') {
 }
 
 // --- Password input (masked with *) ---
-export function password(message) {
+export function password(message, defaultValue = '') {
+  if (!process.stdin.isTTY) {
+    process.stdout.write(`${cyan('?')} ${message} `);
+    return readNonTtyAnswer(defaultValue).then((answer) => {
+      process.stdout.write('\n');
+      return answer || defaultValue;
+    });
+  }
+
   return new Promise((resolve) => {
     const stdout = process.stdout;
     const origWrite = stdout.write.bind(stdout);
@@ -67,7 +75,8 @@ export function password(message) {
       process.stdin.removeListener('data', onData);
     }
 
-    origWrite(`${cyan('?')} ${message} `);
+    const suffix = defaultValue ? ` ${dim('(leave blank to keep current)')}` : '';
+    origWrite(`${cyan('?')} ${message}${suffix} `);
     stdout.write = () => origWrite('');
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -76,13 +85,13 @@ export function password(message) {
       cleanup();
       origWrite('\n');
       rl.close();
-      resolve(value);
+      resolve(value || defaultValue);
     });
 
     rl.on('close', () => {
       cleanup();
       origWrite('\n');
-      resolve(value);
+      resolve(value || defaultValue);
     });
 
     function onData(data) {
@@ -150,9 +159,11 @@ export function select(message, choices, defaultIndex = 0) {
 
     // Non-TTY: auto-select default selectable item
     if (!process.stdin.isTTY) {
-      const selectable = choices.filter((c) => !c.separator);
-      const idx = defaultIndex >= 0 && defaultIndex < selectable.length ? defaultIndex : 0;
-      resolve(selectable[idx]?.value);
+      const preferred = choices[defaultIndex];
+      const choice = preferred && !preferred.separator
+        ? preferred
+        : choices.find((item) => !item.separator);
+      resolve(choice?.value);
       return;
     }
 
@@ -160,7 +171,10 @@ export function select(message, choices, defaultIndex = 0) {
 
     // Map selectable indices
     const selectableIndices = choices.map((c, i) => (c.separator ? -1 : i)).filter((i) => i >= 0);
-    let cursorPos = Math.max(0, Math.min(defaultIndex, selectableIndices.length - 1));
+    const requestedPos = selectableIndices.indexOf(defaultIndex);
+    let cursorPos = requestedPos >= 0
+      ? requestedPos
+      : Math.max(0, Math.min(defaultIndex, selectableIndices.length - 1));
     const getCursor = () => selectableIndices[cursorPos];
 
     const maxVisible = Math.min(choices.length, Math.max(8, (stdout.rows || 24) - 4));
@@ -179,28 +193,30 @@ export function select(message, choices, defaultIndex = 0) {
       const lines = [];
       const cursor = getCursor();
 
-      if (message) lines.push(`${cyan('?')} ${message}`);
+      lines.push(`${cyan('╭─')} ${message ? bold(message) : dim('CCC')}`);
 
       for (let i = windowStart; i < windowEnd; i++) {
         const choice = choices[i];
         if (choice.separator) {
-          lines.push(`    ${dim(choice.name || '─'.repeat(30))}`);
+          lines.push(`${cyan('│')}   ${dim(choice.name || '─'.repeat(30))}`);
         } else if (i === cursor) {
-          lines.push(`  ${cyan('›')} ${choice.name}`);
+          lines.push(`${cyan('│')} ${cyan('›')} ${choice.name}`);
         } else {
-          lines.push(`    ${choice.name}`);
+          lines.push(`${cyan('│')}   ${choice.name}`);
         }
       }
 
       if (choices.length > maxVisible) {
         if (windowStart > 0 && windowEnd < choices.length) {
-          lines.push(gray(`  ↑ ${windowStart} more · ↓ ${choices.length - windowEnd} more`));
+          lines.push(`${cyan('│')} ${gray(`↑ ${windowStart} more · ↓ ${choices.length - windowEnd} more`)}`);
         } else if (windowStart > 0) {
-          lines.push(gray(`  ↑ ${windowStart} more`));
+          lines.push(`${cyan('│')} ${gray(`↑ ${windowStart} more`)}`);
         } else if (windowEnd < choices.length) {
-          lines.push(gray(`  ↓ ${choices.length - windowEnd} more`));
+          lines.push(`${cyan('│')} ${gray(`↓ ${choices.length - windowEnd} more`)}`);
         }
       }
+
+      lines.push(`${cyan('╰─')} ${dim('↑/↓ navigate · enter select · q quit')}`);
 
       return lines;
     }

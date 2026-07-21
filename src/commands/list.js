@@ -1,45 +1,37 @@
 import * as store from '../store.js';
 import { t } from '../i18n.js';
-import { cyan, gray, blue, magenta, yellow, green } from '../color.js';
+import { cyan, dim, gray } from '../color.js';
+import { padVisible, redactUrl, typeBadge } from '../ui.js';
 
 export function listCommand() {
-  const all = store.getAllProfiles();
-
-  if (all.length === 0) {
-    console.log(yellow(t('common.no_profiles')));
-    console.log(gray(t('common.no_profiles_hint')));
+  const profiles = store.getAllProfiles();
+  if (profiles.length === 0) {
+    console.log(t('common.no_profiles'));
     return;
   }
-
-  const rows = all.map((p, i) => {
-    const num = String(i + 1);
-    let url;
-    if (p.type === 'codex') {
-      url = store.getCodexCredentials(p.name).baseUrl || gray(t('common.not_set'));
-    } else {
-      url = store.getClaudeCredentials(p.name).apiUrl || gray(t('common.not_set'));
-    }
-    return { num, name: p.name, url, rawType: p.type };
+  const rows = profiles.map((profile, index) => {
+    const data = profile.type === 'codex'
+      ? store.readCodexProfileData(profile.name)
+      : store.readClaudeProfile(profile.name);
+    return {
+      index: String(index + 1),
+      type: typeBadge(profile.type),
+      name: profile.name,
+      model: data?.model || 'default',
+      endpoint: redactUrl(data?.apiUrl || 'not set'),
+    };
   });
-
-  const w0 = Math.max(1, ...rows.map((r) => r.num.length));
-  const w1 = 8;
-  const w2 = Math.max(7, ...rows.map((r) => r.name.length));
-
+  const widths = {
+    index: Math.max(1, ...rows.map((row) => row.index.length)),
+    type: 10,
+    name: Math.max(7, ...rows.map((row) => row.name.length)),
+    model: Math.max(5, ...rows.map((row) => row.model.length)),
+  };
   console.log();
-  console.log(
-    `  ${cyan('#'.padEnd(w0))}  ${cyan('Type'.padEnd(w1))}  ${cyan('Profile'.padEnd(w2))}  ${cyan('API URL')}`,
-  );
-  console.log(`  ${'─'.repeat(w0)}  ${'─'.repeat(w1)}  ${'─'.repeat(w2)}  ${'─'.repeat(30)}`);
-
-  for (const r of rows) {
-    const num = gray(r.num.padEnd(w0));
-    let type;
-    if (r.rawType === 'codex') type = blue('Codex'.padEnd(w1));
-    else if (r.rawType === 'deepseek') type = green('DeepSeek'.padEnd(w1));
-    else type = magenta('Claude'.padEnd(w1));
-    console.log(`  ${num}  ${type}  ${r.name.padEnd(w2)}  ${r.url}`);
+  console.log(`  ${cyan(padVisible('#', widths.index))}  ${cyan(padVisible('TYPE', widths.type))}  ${cyan(padVisible('PROFILE', widths.name))}  ${cyan(padVisible('MODEL', widths.model))}  ${cyan('ENDPOINT')}`);
+  console.log(`  ${dim('─'.repeat(widths.index))}  ${dim('─'.repeat(widths.type))}  ${dim('─'.repeat(widths.name))}  ${dim('─'.repeat(widths.model))}  ${dim('─'.repeat(28))}`);
+  for (const row of rows) {
+    console.log(`  ${gray(padVisible(row.index, widths.index))}  ${padVisible(row.type, widths.type)}  ${padVisible(row.name, widths.name)}  ${padVisible(row.model, widths.model)}  ${row.endpoint}`);
   }
-
-  console.log(gray(`\n  ${t('list.footer', { count: all.length })}\n`));
+  console.log(gray(`\n  ${profiles.length} profiles · ccc <profile> [arguments]\n`));
 }

@@ -1,43 +1,23 @@
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { confirm, select } from '../prompt.js';
-import { green, red, yellow, blue, magenta, cyan } from '../color.js';
+import { success, typeBadge } from '../ui.js';
 
 export async function deleteCommand(args) {
   const all = store.getAllProfiles();
-  if (all.length === 0) {
-    console.log(yellow(t('common.no_profiles')));
-    process.exit(0);
-  }
-
-  let profileInfo;
-
-  if (!args[0]) {
-    const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : p.type === 'deepseek' ? cyan('[DeepSeek]') : magenta('[Claude]');
-      return { name: `${tag} ${p.name}`, value: p };
-    });
-    profileInfo = await select(t('pick.delete'), choices);
+  if (all.length === 0) throw new Error(t('common.no_profiles'));
+  let profile;
+  if (args[0]) {
+    profile = store.resolveProfile(args[0]);
+    if (!profile) throw new Error(t('common.not_exist', { name: args[0] }));
   } else {
-    profileInfo = store.resolveProfile(args[0]);
-    if (!profileInfo) {
-      console.log(red(t('common.not_exist', { name: args[0] })));
-      process.exit(1);
-    }
+    profile = await select(t('pick.delete'), all.map((item) => ({
+      name: `${typeBadge(item.type)}  ${item.name}`,
+      value: item,
+    })));
   }
-
-  const typeLabel = profileInfo.type === 'codex' ? 'Codex' : profileInfo.type === 'deepseek' ? 'DeepSeek' : 'Claude';
-  const ok = await confirm(t('delete.confirm', { type: typeLabel, name: profileInfo.name }), false);
-  if (!ok) {
-    console.log(yellow(t('common.cancelled')));
-    process.exit(0);
-  }
-
-  if (profileInfo.type === 'codex') {
-    store.deleteCodexProfile(profileInfo.name);
-  } else {
-    store.deleteClaudeProfile(profileInfo.name); // deepseek also stored in profiles/
-  }
-
-  console.log(green(t('delete.done', { type: typeLabel, name: profileInfo.name })));
+  if (!await confirm(t('delete.confirm', { type: profile.type, name: profile.name }), false)) return;
+  if (profile.type === 'codex') store.deleteCodexProfile(profile.name);
+  else store.deleteClaudeProfile(profile.name);
+  success(t('delete.done', { type: profile.type, name: profile.name }));
 }

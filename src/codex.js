@@ -1,98 +1,64 @@
-// Codex launch logic — CODEX_HOME + process env, no global pollution
+// Codex launch logic — invocation-scoped provider config, shared user state.
 
-import fs from 'fs';
-import path from 'path';
-import * as store from './store.js';
+import { stringify as stringifyToml } from 'smol-toml';
+import { hasCodexModelOverride } from './args.js';
 import { buildCodexEnv } from './env.js';
-import { green, gray, red, yellow } from './color.js';
+import * as store from './store.js';
 import { t } from './i18n.js';
-import { spawnCli } from './spawn.js';
+import { commandPreview, danger, panel, redactUrl, typeBadge } from './ui.js';
+import { manageChildLifecycle, spawnCli } from './spawn.js';
 
-// Codex v0.120+ forbids overriding reserved provider names (openai, ollama, lmstudio).
-// Auto-fix old profiles that used [model_providers.openai].
-function fixReservedProviderName(codexHome) {
-  const configPath = path.join(codexHome, 'config.toml');
-  if (!fs.existsSync(configPath)) return;
-
-  let toml = fs.readFileSync(configPath, 'utf-8');
-  if (!toml.includes('[model_providers.openai]')) return;
-
-  toml = toml.replace(
-    /\[model_providers\.openai\]/g,
-    '[model_providers.ccc_openai]',
-  );
-
-  // Ensure model_provider points to the renamed section
-  if (/^\s*model_provider\s*=\s*"openai"/m.test(toml)) {
-    toml = toml.replace(
-      /^(\s*model_provider\s*=\s*)"openai"/m,
-      '$1"ccc_openai"',
-    );
-  } else if (!/^\s*model_provider\s*=/m.test(toml)) {
-    // No model_provider set — add it before first [section]
-    const firstSection = toml.match(/^\s*\[/m);
-    if (firstSection && firstSection.index !== undefined) {
-      toml = toml.slice(0, firstSection.index)
-        + 'model_provider = "ccc_openai"\n'
-        + toml.slice(firstSection.index);
-    }
-  }
-
-  const providerSection = /(\[model_providers\.ccc_openai\][^\[]*)/s;
-  toml = toml.replace(providerSection, (section) => {
-    let updated = section.replace(
-      /^\s*requires_openai_auth\s*=\s*true\s*$/m,
-      'env_key = "OPENAI_API_KEY"',
-    );
-    if (!/^\s*env_key\s*=.*$/m.test(updated)) {
-      updated = updated.trimEnd() + '\nenv_key = "OPENAI_API_KEY"\n';
-    }
-    if (!/^\s*wire_api\s*=.*$/m.test(updated)) {
-      updated = updated.trimEnd() + '\nwire_api = "responses"\n';
-    }
-    return updated;
-  });
-
-  fs.writeFileSync(configPath, toml);
-  console.log(yellow(t('launch.fix_provider')));
+function tomlLiteral(value) {
+  const line = stringifyToml({ value }).trim();
+  return line.slice(line.indexOf('=') + 1).trim();
 }
 
-export function launchCodex(profileName, dangerouslySkipPermissions = false) {
-  const codexHome = store.getCodexProfileDir(profileName);
+function normalizeOptions(options) {
+  if (typeof options === 'boolean') return { dangerous: options, args: [] };
+  return { dangerous: false, args: [], ...(options || {}) };
+}
 
-  if (!store.codexProfileExists(profileName)) {
-    console.log(red(t('common.not_exist', { name: profileName })));
-    process.exit(1);
+export function buildCodexArgs(profile, options = {}) {
+  const normalized = normalizeOptions(options);
+  const providerId = store.CCC_OPENAI_COMPAT_PROVIDER;
+  const passthrough = [...normalized.args];
+  const args = [
+    '-c', `model_provider=${tomlLiteral(providerId)}`,
+    '-c', `model_providers.${providerId}.name=${tomlLiteral('CCC OpenAI Compatible')}`,
+    '-c', `model_providers.${providerId}.base_url=${tomlLiteral(profile.apiUrl)}`,
+    '-c', `model_providers.${providerId}.env_key=${tomlLiteral('OPENAI_API_KEY')}`,
+    '-c', `model_providers.${providerId}.wire_api=${tomlLiteral(profile.wireApi || 'responses')}`,
+  ];
+  if (profile.model && !hasCodexModelOverride(passthrough)) {
+    args.push('-m', profile.model);
+  }
+  if (normalized.dangerous) args.push('--dangerously-bypass-approvals-and-sandbox');
+  args.push(...passthrough);
+  return args;
+}
+
+export function launchCodex(profileName, options = {}) {
+  const normalized = normalizeOptions(options);
+  const profile = store.readCodexProfileData(profileName);
+  if (!profile) throw new Error(t('common.not_exist', { name: profileName }));
+  if (!profile.apiKey) throw new Error(t('common.apikey_required'));
+
+  const args = buildCodexArgs(profile, normalized);
+  const env = buildCodexEnv(profile.apiKey);
+
+  if (process.stdout.isTTY) {
+    panel('Launch', [
+      ['Profile', `${typeBadge('codex')}  ${profileName}`],
+      ['Model', profile.model || 'upstream default'],
+      ['Endpoint', redactUrl(profile.apiUrl)],
+      ['Access', normalized.dangerous ? 'FULL ACCESS' : 'standard'],
+    ], normalized.dangerous ? 'danger' : 'cyan');
+    if (normalized.dangerous) danger('Approvals and sandboxing are disabled for this session.');
+    commandPreview('codex', args);
   }
 
-  // Codex requires CODEX_HOME to be an existing directory
-  if (!fs.existsSync(codexHome)) {
-    fs.mkdirSync(codexHome, { recursive: true });
-  }
-
-  // Auto-fix reserved provider names from old profiles
-  fixReservedProviderName(codexHome);
-
-  const { apiKey } = store.getCodexCredentials(profileName);
-  const env = buildCodexEnv(codexHome, apiKey);
-
-  const args = [];
-  if (dangerouslySkipPermissions) args.push('--full-auto');
-
-  console.log(green(t('launch.codex', { name: profileName })));
-  console.log(gray(t('launch.cmd_codex', { home: codexHome, args: args.join(' ') })));
-
-  const child = spawnCli('codex', args, {
-    stdio: 'inherit',
-    env,
+  const child = spawnCli('codex', args, { stdio: 'inherit', env });
+  manageChildLifecycle(child, {
+    onError: (err) => console.error(t('launch.failed', { msg: err.message })),
   });
-
-  child.on('close', (code) => process.exit(code ?? 0));
-  child.on('error', (err) => {
-    console.log(red(t('launch.failed', { msg: err.message })));
-    process.exit(1);
-  });
-  for (const sig of ['SIGTERM', 'SIGHUP']) {
-    process.on(sig, () => child.kill(sig));
-  }
 }

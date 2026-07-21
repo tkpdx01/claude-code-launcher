@@ -1,100 +1,115 @@
 import * as store from '../store.js';
 import { t } from '../i18n.js';
-import { input, confirm, select } from '../prompt.js';
-import { promptCodexModel } from '../models.js';
+import { confirm, input, password, select } from '../prompt.js';
+import { promptModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
-import { green, red, yellow, blue, magenta, cyan } from '../color.js';
 import { launchClaude } from '../claude.js';
 import { launchCodex } from '../codex.js';
+import { panel, redactUrl, success, typeBadge } from '../ui.js';
+import { normalizeSecret, validateApiUrl, validateModelId } from '../validation.js';
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
-const DEEPSEEK_MODELS = [
-  { name: 'deepseek-chat (V3)', value: 'deepseek-chat' },
-  { name: 'deepseek-reasoner (R1)', value: 'deepseek-reasoner' },
-];
+
+function parseOptions(args) {
+  const options = { name: '', type: '', apiUrl: '', model: '', apiKeyEnv: '' };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--type') options.type = args[++index] || '';
+    else if (arg === '--url' || arg === '--base-url') options.apiUrl = args[++index] || '';
+    else if (arg === '--model') options.model = args[++index] || '';
+    else if (arg === '--api-key-env') options.apiKeyEnv = args[++index] || '';
+    else if (!arg.startsWith('-') && !options.name) options.name = arg;
+  }
+  return options;
+}
+
+async function readApiKey(label, options) {
+  if (options.apiKeyEnv) return normalizeSecret(process.env[options.apiKeyEnv]);
+  return normalizeSecret(await password(label));
+}
 
 export async function newCommand(args) {
-  let name = normalizeProfileName(args[0] || '');
-  let replacedProfile = null;
-
-  const profileType = await select(t('common.profile_type'), [
-    { name: `${magenta('[Claude]')} Claude Code`, value: 'claude' },
-    { name: `${blue('[Codex]')}  OpenAI Codex`, value: 'codex' },
-    { name: `${cyan('[DeepSeek]')} DeepSeek`, value: 'deepseek' },
-  ]);
-
-  if (!name) {
-    name = normalizeProfileName(await input(t('common.profile_name')));
+  const options = parseOptions(args);
+  let name = normalizeProfileName(options.name);
+  const allowedTypes = new Set(['claude', 'codex', 'deepseek']);
+  if (options.type && !allowedTypes.has(options.type)) {
+    throw new Error(`Unsupported profile type: ${options.type}`);
   }
-  const v = validateProfileName(name);
-  if (v !== true) {
-    console.log(red(v));
-    process.exit(1);
+  let profileType = options.type;
+  if (!profileType) {
+    profileType = await select(t('common.profile_type'), [
+      { name: `${typeBadge('claude')}  Claude Code`, value: 'claude' },
+      { name: `${typeBadge('codex')}  OpenAI Codex`, value: 'codex' },
+      { name: `${typeBadge('deepseek')}  DeepSeek via Claude Code`, value: 'deepseek' },
+    ]);
   }
+
+  if (!name) name = normalizeProfileName(await input(t('common.profile_name')));
+  const validation = validateProfileName(name);
+  if (validation !== true) throw new Error(validation);
 
   const existing = store.anyProfileExists(name);
   if (existing.exists) {
-    const typeLabel = existing.type === 'codex' ? 'Codex' : existing.type === 'deepseek' ? 'DeepSeek' : 'Claude';
-    const overwrite = await confirm(t('new.exists', { name, type: typeLabel }), false);
-    if (!overwrite) {
-      console.log(yellow(t('common.cancelled')));
-      process.exit(0);
-    }
-    if (existing.type !== profileType) {
-      replacedProfile = { name, type: existing.type };
-    }
+    const overwrite = await confirm(t('new.exists', { name, type: existing.type }), false);
+    if (!overwrite) return;
   }
 
   if (profileType === 'codex') {
-    const baseUrl = await input('Base URL:', 'https://api.openai.com/v1');
-    const apiKey = await input('OPENAI_API_KEY:');
-    if (!apiKey) {
-      console.log(red(t('common.apikey_required')));
-      process.exit(1);
-    }
-    const model = await promptCodexModel(baseUrl, apiKey, '');
-
-    store.ensureDirs();
-    store.createCodexProfile(name, apiKey, baseUrl, model);
-    if (replacedProfile?.type === 'claude' || replacedProfile?.type === 'deepseek') store.deleteClaudeProfile(replacedProfile.name);
-    console.log(green(`\n${t('new.created_codex', { name })}`));
-
-    if (await confirm(t('new.launch_codex'), false)) {
-      launchCodex(name);
-    }
-  } else if (profileType === 'deepseek') {
-    const apiKey = await input('DeepSeek API Key:');
-    if (!apiKey) {
-      console.log(red(t('common.apikey_required')));
-      process.exit(1);
-    }
-    const model = await select('Model:', DEEPSEEK_MODELS);
-
-    store.ensureDirs();
-    store.saveClaudeProfile(name, { apiUrl: DEEPSEEK_BASE_URL, apiKey, model, type: 'deepseek' });
-    if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
-    if (replacedProfile?.type === 'claude') store.deleteClaudeProfile(replacedProfile.name);
-    console.log(green(`\n${t('new.created_deepseek', { name })}`));
-
-    if (await confirm(t('new.launch_deepseek'), false)) {
-      launchClaude(name);
-    }
-  } else {
-    const apiUrl = await input('ANTHROPIC_BASE_URL:', 'https://api.anthropic.com');
-    const apiKey = await input('ANTHROPIC_AUTH_TOKEN:');
-    if (!apiKey) {
-      console.log(red(t('common.apikey_required')));
-      process.exit(1);
-    }
-
-    store.ensureDirs();
-    store.saveClaudeProfile(name, { apiUrl, apiKey });
-    if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
-    if (replacedProfile?.type === 'deepseek') store.deleteClaudeProfile(replacedProfile.name);
-    console.log(green(`\n${t('new.created_claude', { name })}`));
-
-    if (await confirm(t('new.launch_claude'), false)) {
-      launchClaude(name);
-    }
+    const apiUrl = validateApiUrl(options.apiUrl || await input('Base URL:', store.OPENAI_DEFAULT_BASE_URL));
+    const apiKey = await readApiKey('OPENAI_API_KEY:', options);
+    if (!apiKey) throw new Error(t('common.apikey_required'));
+    const model = validateModelId(options.model || await promptModel({ type: 'codex', baseUrl: apiUrl, apiKey }));
+    store.createCodexProfile(name, apiKey, apiUrl, model);
+    if (existing.type === 'claude' || existing.type === 'deepseek') store.deleteClaudeProfile(name);
+    success(t('new.created_codex', { name }));
+    panel('Profile ready', [
+      ['Type', typeBadge('codex')],
+      ['Name', name],
+      ['Model', model || 'upstream default'],
+      ['Endpoint', redactUrl(apiUrl)],
+    ], 'success');
+    if (await confirm(t('new.launch_codex'), false)) launchCodex(name);
+    return;
   }
+
+  if (profileType === 'deepseek') {
+    const apiKey = await readApiKey('DeepSeek API Key:', options);
+    if (!apiKey) throw new Error(t('common.apikey_required'));
+    const model = validateModelId(options.model || await promptModel({
+      type: 'deepseek',
+      baseUrl: DEEPSEEK_BASE_URL,
+      apiKey,
+    }));
+    store.saveClaudeProfile(name, {
+      type: 'deepseek',
+      apiUrl: DEEPSEEK_BASE_URL,
+      apiKey,
+      model,
+    });
+    if (existing.type === 'codex') store.deleteCodexProfile(name);
+    success(t('new.created_deepseek', { name }));
+    panel('Profile ready', [
+      ['Type', typeBadge('deepseek')],
+      ['Name', name],
+      ['Model', model || 'upstream default'],
+      ['Endpoint', redactUrl(DEEPSEEK_BASE_URL)],
+    ], 'success');
+    if (await confirm(t('new.launch_deepseek'), false)) launchClaude(name);
+    return;
+  }
+
+  const apiUrl = validateApiUrl(options.apiUrl || await input('ANTHROPIC_BASE_URL:', 'https://api.anthropic.com'));
+  const apiKey = await readApiKey('ANTHROPIC_AUTH_TOKEN:', options);
+  if (!apiKey) throw new Error(t('common.apikey_required'));
+  const model = validateModelId(options.model || await promptModel({ type: 'claude', baseUrl: apiUrl, apiKey }));
+  store.saveClaudeProfile(name, { apiUrl, apiKey, model });
+  if (existing.type === 'codex') store.deleteCodexProfile(name);
+  success(t('new.created_claude', { name }));
+  panel('Profile ready', [
+    ['Type', typeBadge('claude')],
+    ['Name', name],
+    ['Model', model || 'upstream default'],
+    ['Endpoint', redactUrl(apiUrl)],
+  ], 'success');
+  if (await confirm(t('new.launch_claude'), false)) launchClaude(name);
 }

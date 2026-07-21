@@ -3,6 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG_DIR } from './config.js';
+import { atomicWriteJson, ensurePrivateDir } from './fs-safe.js';
 
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
@@ -15,6 +16,10 @@ const strings = {
     'menu.launch.desc': 'Start claude/codex with a profile',
     'menu.apply': 'Apply',
     'menu.apply.desc': 'Write credentials to main config',
+    'menu.models': 'Models',
+    'menu.models.desc': 'Browse and select available models',
+    'menu.doctor': 'Doctor',
+    'menu.doctor.desc': 'Check installation and security',
     'menu.new': 'New',
     'menu.new.desc': 'Create a new profile',
     'menu.edit': 'Edit',
@@ -108,7 +113,7 @@ const strings = {
     'help.quick': 'Quick launch:',
     'help.quick.name': 'Launch by name',
     'help.quick.number': 'Launch by index',
-    'help.quick.ddd': '--dangerously-skip-permissions / --full-auto',
+    'help.quick.ddd': 'full access mode',
     'help.commands': 'Commands:',
     'help.cmd.list': 'List all profiles',
     'help.cmd.new': 'Create profile',
@@ -128,6 +133,10 @@ const strings = {
     'menu.launch.desc': '选择 profile 启动 claude / codex',
     'menu.apply': '应用',
     'menu.apply.desc': '写入主配置（支持原生启动）',
+    'menu.models': '模型',
+    'menu.models.desc': '浏览并选择可用模型',
+    'menu.doctor': '诊断',
+    'menu.doctor.desc': '检查安装、配置与安全状态',
     'menu.new': '新建',
     'menu.new.desc': '创建 profile',
     'menu.edit': '编辑',
@@ -210,7 +219,7 @@ const strings = {
     'help.quick': '快速启动:',
     'help.quick.name': '按名称启动',
     'help.quick.number': '按序号启动',
-    'help.quick.ddd': '--dangerously-skip-permissions / --full-auto',
+    'help.quick.ddd': '完全权限模式',
     'help.commands': '命令:',
     'help.cmd.list': '列出所有 profile',
     'help.cmd.new': '创建 profile',
@@ -244,13 +253,13 @@ export function getLang() {
 export function setLang(lang) {
   currentLang = lang;
   try {
-    if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    ensurePrivateDir(CONFIG_DIR);
     let cfg = {};
     if (fs.existsSync(CONFIG_PATH)) {
       try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch { /* */ }
     }
     cfg.lang = lang;
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + '\n');
+    atomicWriteJson(CONFIG_PATH, cfg);
   } catch { /* ignore */ }
 }
 

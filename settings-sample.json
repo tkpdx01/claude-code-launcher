@@ -1,4 +1,4 @@
 {
-  "ANTHROPIC_AUTH_TOKEN": "sk-HiE7EhUSFxHAPREEa87obE709H5VkraXdFoh5GqnUlBHGxmk",
-  "ANTHROPIC_BASE_URL": "https://wzw.pp.ua/"
+  "ANTHROPIC_AUTH_TOKEN": "sk-example-not-a-real-key",
+  "ANTHROPIC_BASE_URL": "https://gateway.example.invalid"
 }

@@ -1,14 +1,30 @@
 {
   "name": "@tkpdx01/ccc",
   "version": "2.2.0",
-  "description": "Claude Code / Codex Settings Launcher - Manage multiple profiles with zero dependencies",
+  "description": "A polished, secure profile launcher for Claude Code and OpenAI Codex",
   "main": "index.js",
   "bin": {
     "ccc": "index.js"
   },
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "check": "node --check index.js && node --test",
+    "pack:check": "npm pack --dry-run",
+    "secrets": "node scripts/check-secrets.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "index.js",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "smol-toml": "^1.7.0"
   },
   "keywords": [
     "claude",

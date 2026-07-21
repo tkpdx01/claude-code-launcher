@@ -1,169 +1,134 @@
-// Claude Code launch logic — runtime merge, temp file, zero global pollution
+// Claude Code launch logic — secure runtime settings + transparent arguments.
 
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { CLAUDE_SETTINGS_PATH, TMP_DIR } from './config.js';
 import { applyClaudeDefaults } from './claude-settings.js';
 import { buildClaudeEnv, isModelOverrideKey } from './env.js';
+import { hasClaudeModelOverride } from './args.js';
+import { atomicWriteJson, ensurePrivateDir } from './fs-safe.js';
 import * as store from './store.js';
-import { green, gray, red } from './color.js';
 import { t } from './i18n.js';
-import { spawnCli } from './spawn.js';
+import { commandPreview, danger, panel, typeBadge } from './ui.js';
+import { manageChildLifecycle, spawnCli } from './spawn.js';
 
-// Read ~/.claude/settings.json (read-only, never write)
-function readMainSettings() {
-  if (!fs.existsSync(CLAUDE_SETTINGS_PATH)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8'));
-  } catch {
-    return {};
-  }
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-// Simple deep merge (target gets overwritten by source for overlapping keys)
-function deepMerge(target, source) {
+function readMainSettings() {
+  if (!fs.existsSync(CLAUDE_SETTINGS_PATH)) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf8'));
+  } catch (err) {
+    throw new Error(`Cannot launch: ${CLAUDE_SETTINGS_PATH} is invalid JSON (${err.message})`);
+  }
+  if (!isPlainObject(parsed)) {
+    throw new Error(`Cannot launch: ${CLAUDE_SETTINGS_PATH} must contain a JSON object`);
+  }
+  return parsed;
+}
+
+export function deepMerge(target, source) {
+  if (!isPlainObject(source)) return target;
   for (const key of Object.keys(source)) {
-    const sv = source[key];
-    const tv = target[key];
-    if (
-      sv && typeof sv === 'object' && !Array.isArray(sv) &&
-      tv && typeof tv === 'object' && !Array.isArray(tv)
-    ) {
-      deepMerge(tv, sv);
+    if (['__proto__', 'prototype', 'constructor'].includes(key)) continue;
+    const sourceValue = source[key];
+    const targetValue = target[key];
+    if (isPlainObject(sourceValue) && isPlainObject(targetValue)) {
+      deepMerge(targetValue, sourceValue);
     } else {
-      target[key] = sv;
+      target[key] = structuredClone(sourceValue);
     }
   }
   return target;
 }
 
-// Detect ccline at runtime — only set if binary exists
-function detectCcline() {
-  const platform = os.platform();
-  const cclinePath = platform === 'win32'
-    ? path.join(os.homedir(), '.claude', 'ccline', 'ccline.exe')
-    : path.join(os.homedir(), '.claude', 'ccline', 'ccline');
+export function buildClaudeSettings(profile, mainSettings = {}) {
+  const merged = deepMerge(structuredClone(mainSettings), profile.settings || {});
+  if (!isPlainObject(merged.env)) merged.env = {};
 
-  // Use expandable path for the command (~ works in Claude Code's shell execution)
-  const command = platform === 'win32'
-    ? '%USERPROFILE%\\.claude\\ccline\\ccline.exe'
-    : '~/.claude/ccline/ccline';
-
-  if (fs.existsSync(cclinePath)) {
-    return { type: 'command', command, padding: 0 };
+  delete merged.env.ANTHROPIC_API_KEY;
+  delete merged.env.ANTHROPIC_AUTH_TOKEN;
+  delete merged.env.ANTHROPIC_BASE_URL;
+  for (const key of ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY']) {
+    delete merged.env[key];
   }
-  return null;
-}
-
-// Write merged settings to a temp file under ~/.ccc/tmp/
-function writeTempSettings(profileName, settings) {
-  if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
-  const tmpPath = path.join(TMP_DIR, `${profileName}.json`);
-  fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + '\n');
-  return tmpPath;
-}
-
-export function launchClaude(profileName, dangerouslySkipPermissions = false) {
-  const profile = store.readClaudeProfile(profileName);
-  if (!profile) {
-    console.log(red(t('common.not_exist', { name: profileName })));
-    process.exit(1);
-  }
-  if (!profile.apiKey) {
-    console.log(red(t('common.apikey_required')));
-    console.log(red(`  → ccc edit ${profileName}`));
-    process.exit(1);
-  }
-
-  const isDeepseek = profile.type === 'deepseek';
-
-  // 1. Read main config (read-only)
-  const main = readMainSettings();
-
-  // 2. Deep merge profile.settings overrides into main config copy
-  const merged = deepMerge(structuredClone(main), profile.settings || {});
-  applyClaudeDefaults(merged);
-
-  // 3. Inject required env into merged settings
-  merged.env = merged.env || {};
   if (profile.apiKey) merged.env.ANTHROPIC_AUTH_TOKEN = profile.apiKey;
   if (profile.apiUrl) merged.env.ANTHROPIC_BASE_URL = profile.apiUrl;
 
-  // Inject model for DeepSeek profiles
-  if (isDeepseek && profile.model) {
-    merged.env.ANTHROPIC_MODEL = profile.model;
-  }
-
-  // Disable telemetry (granular, avoids blocking GrowthBook feature flags)
-  merged.env.DISABLE_TELEMETRY = '1';
-  merged.env.DISABLE_ERROR_REPORTING = '1';
-  merged.env.DISABLE_AUTOUPDATER = '1';
-  merged.env.DISABLE_BUG_COMMAND = '1';
-
-  // Inject extra env from profile
-  if (profile.env && typeof profile.env === 'object') {
+  const profileEnvKeys = new Set();
+  if (isPlainObject(profile.env)) {
     for (const [key, value] of Object.entries(profile.env)) {
       merged.env[key] = value;
+      profileEnvKeys.add(key);
     }
   }
-
-  // Set model override env vars to empty in merged settings — this ensures
-  // they take priority over user settings source and force Claude Code
-  // to use its built-in default model for this endpoint.
-  // Skip keys explicitly set in profile.env (user wants those).
-  const profileEnvKeys = new Set(Object.keys(profile.env || {}));
   for (const key of Object.keys(merged.env)) {
     if (isModelOverrideKey(key) && !profileEnvKeys.has(key)) merged.env[key] = '';
   }
+  if (profile.model) merged.model = profile.model;
+  else delete merged.model;
 
-  // Strip inherited model from main config — different endpoints support different
-  // models, inheriting the main config's model almost always causes errors.
-  // Users can explicitly set model via profile.settings.model if needed.
-  if (!profile.settings?.model) {
-    delete merged.model;
+  applyClaudeDefaults(merged, { apiUrl: profile.apiUrl });
+  return merged;
+}
+
+function createRuntimeSettings(profileName, settings) {
+  ensurePrivateDir(TMP_DIR);
+  const safeName = profileName.replace(/[^A-Za-z0-9_.-]/g, '_');
+  const runtimeDir = fs.mkdtempSync(path.join(TMP_DIR, `${safeName}-`));
+  ensurePrivateDir(runtimeDir);
+  const settingsPath = path.join(runtimeDir, 'settings.json');
+  atomicWriteJson(settingsPath, settings);
+  return {
+    settingsPath,
+    cleanup: () => fs.rmSync(runtimeDir, { recursive: true, force: true }),
+  };
+}
+
+function normalizeOptions(options) {
+  if (typeof options === 'boolean') return { dangerous: options, args: [] };
+  return { dangerous: false, args: [], ...(options || {}) };
+}
+
+export function buildClaudeArgs(profile, settingsPath, options = {}) {
+  const normalized = normalizeOptions(options);
+  const passthrough = [...normalized.args];
+  const args = ['--settings', settingsPath];
+  if (profile.model && !hasClaudeModelOverride(passthrough)) {
+    args.push('--model', profile.model);
   }
+  if (normalized.dangerous) args.push('--dangerously-skip-permissions');
+  args.push(...passthrough);
+  return args;
+}
 
-  // 4. Runtime ccline detection — only if user hasn't set statusLine
-  if (!merged.statusLine) {
-    const ccline = detectCcline();
-    if (ccline) merged.statusLine = ccline;
-  }
+export function launchClaude(profileName, options = {}) {
+  const normalized = normalizeOptions(options);
+  const profile = store.readClaudeProfile(profileName);
+  if (!profile) throw new Error(t('common.not_exist', { name: profileName }));
+  if (!profile.apiKey) throw new Error(t('common.apikey_required'));
 
-  // 5. Skip onboarding
-  merged.hasCompletedOnboarding = true;
-
-  // 6. Disable attribution
-  if (!merged.attribution || typeof merged.attribution !== 'object') {
-    merged.attribution = { commit: '', pr: '' };
-  }
-  merged.includeCoAuthoredBy = false;
-
-  // 7. Write temp settings file
-  const tmpPath = writeTempSettings(profileName, merged);
-
-  // 8. Build child process env (credentials also injected via process env for priority)
+  const settings = buildClaudeSettings(profile, readMainSettings());
+  const runtime = createRuntimeSettings(profileName, settings);
+  const args = buildClaudeArgs(profile, runtime.settingsPath, normalized);
   const childEnv = buildClaudeEnv(profile);
 
-  // 9. Spawn
-  const args = ['--settings', tmpPath];
-  if (dangerouslySkipPermissions) args.push('--dangerously-skip-permissions');
-
-  const launchKey = isDeepseek ? 'launch.deepseek' : 'launch.claude';
-  console.log(green(t(launchKey, { name: profileName })));
-  console.log(gray(t('launch.cmd_claude', { args: args.join(' ') })));
-
-  const child = spawnCli('claude', args, {
-    stdio: 'inherit',
-    env: childEnv,
-  });
-
-  child.on('close', (code) => process.exit(code ?? 0));
-  child.on('error', (err) => {
-    console.log(red(t('launch.failed', { msg: err.message })));
-    process.exit(1);
-  });
-  for (const sig of ['SIGTERM', 'SIGHUP']) {
-    process.on(sig, () => child.kill(sig));
+  if (process.stdout.isTTY) {
+    panel('Launch', [
+      ['Profile', `${typeBadge(profile.type)}  ${profileName}`],
+      ['Model', profile.model || 'upstream default'],
+      ['Access', normalized.dangerous ? 'FULL ACCESS' : 'standard'],
+    ], normalized.dangerous ? 'danger' : 'cyan');
+    if (normalized.dangerous) danger('Permission checks are disabled for this session.');
+    commandPreview('claude', args);
   }
+
+  const child = spawnCli('claude', args, { stdio: 'inherit', env: childEnv });
+  manageChildLifecycle(child, {
+    cleanup: runtime.cleanup,
+    onError: (err) => console.error(t('launch.failed', { msg: err.message })),
+  });
 }

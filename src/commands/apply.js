@@ -1,130 +1,201 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import * as store from '../store.js';
-import { t } from '../i18n.js';
-import { CLAUDE_SETTINGS_PATH, CODEX_HOME_PATH } from '../config.js';
-import { applyClaudeDefaults } from '../claude-settings.js';
-import { isModelOverrideKey } from '../env.js';
-import { select, confirm } from '../prompt.js';
-import { green, gray, red, yellow, blue, magenta } from '../color.js';
+import { buildClaudeSettings } from '../claude.js';
+import { BACKUPS_DIR, CLAUDE_SETTINGS_PATH, CODEX_HOME_PATH } from '../config.js';
+import {
+  atomicWriteFile,
+  atomicWriteJson,
+  backupFile,
+  ensurePrivateDir,
+  readJsonStrict,
+} from '../fs-safe.js';
+import { confirm, select } from '../prompt.js';
+import { gray } from '../color.js';
+import { panel, redactSecrets, success, typeBadge, warning } from '../ui.js';
+
+const MANIFEST_PATH = path.join(BACKUPS_DIR, 'last-apply.json');
+
+function parseOptions(args) {
+  return {
+    dryRun: args.includes('--dry-run'),
+    rollback: args.includes('--rollback'),
+    yes: args.includes('--yes'),
+    profile: args.find((arg) => !arg.startsWith('-')) || '',
+  };
+}
+
+async function chooseProfile(token) {
+  const all = store.getAllProfiles();
+  if (all.length === 0) throw new Error('No profiles available');
+  if (token) {
+    const profile = store.resolveProfile(token);
+    if (!profile) throw new Error(`Profile "${token}" does not exist`);
+    return profile;
+  }
+  return select('Select profile to apply:', all.map((profile) => ({
+    name: `${typeBadge(profile.type)}  ${profile.name}`,
+    value: profile,
+  })));
+}
+
+function readJsonObject(file, label) {
+  const value = readJsonStrict(file, { defaultValue: {} });
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must contain a JSON object`);
+  }
+  return value;
+}
+
+function buildClaudePlan(info) {
+  const profile = store.readClaudeProfile(info.name);
+  const current = readJsonObject(CLAUDE_SETTINGS_PATH, CLAUDE_SETTINGS_PATH);
+  const next = buildClaudeSettings(profile, current);
+  if (profile.model) next.model = profile.model;
+  else delete next.model;
+  return [{
+    target: CLAUDE_SETTINGS_PATH,
+    label: 'claude-settings.json',
+    content: `${JSON.stringify(next, null, 2)}\n`,
+    preview: `${JSON.stringify(redactSecrets(next), null, 2)}\n`,
+  }];
+}
+
+function readTomlObject(file) {
+  if (!fs.existsSync(file)) return {};
+  try {
+    return parseToml(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    throw new Error(`${file} is invalid TOML: ${err.message}`);
+  }
+}
+
+function buildCodexPlan(info) {
+  const profile = store.readCodexProfileData(info.name);
+  const authPath = path.join(CODEX_HOME_PATH, 'auth.json');
+  const configPath = path.join(CODEX_HOME_PATH, 'config.toml');
+  const auth = readJsonObject(authPath, authPath);
+  const config = readTomlObject(configPath);
+  const providerId = store.CCC_OPENAI_COMPAT_PROVIDER;
+
+  if (config.analytics && typeof config.analytics === 'object') {
+    delete config.analytics.model;
+    delete config.analytics.model_provider;
+  }
+  config.model_provider = providerId;
+  if (profile.model) config.model = profile.model;
+  else delete config.model;
+  config.model_providers = {
+    ...(config.model_providers || {}),
+    [providerId]: {
+      name: 'CCC OpenAI Compatible',
+      base_url: profile.apiUrl,
+      env_key: 'OPENAI_API_KEY',
+      wire_api: profile.wireApi || 'responses',
+    },
+  };
+
+  const nextAuth = {
+    ...auth,
+    auth_mode: 'apikey',
+    OPENAI_API_KEY: profile.apiKey,
+  };
+  return [
+    {
+      target: authPath,
+      label: 'codex-auth.json',
+      content: `${JSON.stringify(nextAuth, null, 2)}\n`,
+      preview: `${JSON.stringify(redactSecrets(nextAuth), null, 2)}\n`,
+    },
+    {
+      target: configPath,
+      label: 'codex-config.toml',
+      content: `${stringifyToml(config).trimEnd()}\n`,
+      preview: `${stringifyToml(redactSecrets(config)).trimEnd()}\n`,
+    },
+  ];
+}
+
+function showPlan(info, plan, dryRun) {
+  panel(dryRun ? 'Apply preview' : 'Apply', [
+    ['Profile', `${typeBadge(info.type)}  ${info.name}`],
+    ['Files', plan.length],
+    ['Mode', dryRun ? 'dry run · no files changed' : 'backup + atomic write'],
+  ]);
+  for (const file of plan) {
+    console.log(`\n  ${file.target}`);
+    console.log(gray(file.preview.split('\n').map((line) => `    ${line}`).join('\n')));
+  }
+}
+
+function restoreFiles(files) {
+  for (const item of [...files].reverse()) {
+    if (item.existed) {
+      if (!item.backup || !fs.existsSync(item.backup)) {
+        throw new Error(`Missing backup for ${item.target}`);
+      }
+      atomicWriteFile(item.target, fs.readFileSync(item.backup));
+    } else {
+      try {
+        fs.rmSync(item.target, { force: true });
+      } catch (err) {
+        if (!['ENOENT', 'ENOTDIR'].includes(err.code)) throw err;
+      }
+    }
+  }
+}
+
+export function executePlan(info, plan) {
+  ensurePrivateDir(BACKUPS_DIR);
+  const files = plan.map((item) => ({
+    target: item.target,
+    backup: backupFile(item.target, BACKUPS_DIR, item.label),
+    existed: fs.existsSync(item.target),
+  }));
+  try {
+    for (const item of plan) atomicWriteFile(item.target, item.content);
+    atomicWriteJson(MANIFEST_PATH, {
+      createdAt: new Date().toISOString(),
+      profile: info.name,
+      type: info.type,
+      files,
+    });
+  } catch (err) {
+    try {
+      restoreFiles(files);
+    } catch (restoreError) {
+      throw new Error(`Apply failed: ${err.message}; automatic restore failed: ${restoreError.message}`);
+    }
+    throw err;
+  }
+}
+
+async function rollback(options) {
+  const manifest = readJsonStrict(MANIFEST_PATH, { allowMissing: false, label: 'Apply backup manifest' });
+  panel('Rollback', [
+    ['Profile', manifest.profile],
+    ['Created', manifest.createdAt],
+    ['Files', manifest.files.length],
+  ], 'danger');
+  if (!options.yes && !await confirm('Restore this backup?', false)) return;
+  restoreFiles(manifest.files);
+  success('Native configuration restored from the latest CCC backup');
+}
 
 export async function applyCommand(args) {
-  const all = store.getAllProfiles();
-  if (all.length === 0) {
-    console.log(yellow(t('common.no_profiles')));
-    process.exit(0);
+  const options = parseOptions(args);
+  if (options.rollback) {
+    await rollback(options);
+    return;
   }
 
-  let profileInfo;
-
-  if (!args[0]) {
-    const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
-      return { name: `${tag} ${p.name}`, value: p };
-    });
-    profileInfo = await select(t('pick.apply'), choices);
-  } else {
-    profileInfo = store.resolveProfile(args[0]);
-    if (!profileInfo) {
-      console.log(red(t('common.not_exist', { name: args[0] })));
-      process.exit(1);
-    }
-  }
-
-  const target = profileInfo.type === 'codex' ? '~/.codex/' : '~/.claude/settings.json';
-  const ok = await confirm(t('apply.confirm', { name: profileInfo.name, target }), false);
-  if (!ok) {
-    console.log(yellow(t('common.cancelled')));
-    process.exit(0);
-  }
-
-  if (profileInfo.type === 'codex') {
-    applyCodex(profileInfo.name);
-  } else {
-    applyClaude(profileInfo.name);
-  }
-}
-
-function applyClaude(name) {
-  const profile = store.readClaudeProfile(name);
-  if (!profile) {
-    console.log(red(t('apply.failed')));
-    process.exit(1);
-  }
-
-  let settings = {};
-  if (fs.existsSync(CLAUDE_SETTINGS_PATH)) {
-    try {
-      settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8'));
-    } catch { /* start fresh */ }
-  }
-
-  settings.env = settings.env || {};
-  if (profile.apiKey) settings.env.ANTHROPIC_AUTH_TOKEN = profile.apiKey;
-  if (profile.apiUrl) settings.env.ANTHROPIC_BASE_URL = profile.apiUrl;
-
-  settings.env.DISABLE_TELEMETRY = '1';
-  settings.env.DISABLE_ERROR_REPORTING = '1';
-  settings.env.DISABLE_AUTOUPDATER = '1';
-  settings.env.DISABLE_BUG_COMMAND = '1';
-
-  if (profile.env && typeof profile.env === 'object') {
-    for (const [key, value] of Object.entries(profile.env)) {
-      settings.env[key] = value;
-    }
-  }
-
-  const profileEnvKeys = new Set(Object.keys(profile.env || {}));
-  for (const key of Object.keys(settings.env)) {
-    if (isModelOverrideKey(key) && !profileEnvKeys.has(key)) {
-      delete settings.env[key];
-    }
-  }
-
-  if (!profile.settings?.model) {
-    delete settings.model;
-  } else {
-    settings.model = profile.settings.model;
-  }
-
-  if (profile.settings && typeof profile.settings === 'object') {
-    for (const [key, value] of Object.entries(profile.settings)) {
-      settings[key] = value;
-    }
-  }
-
-  applyClaudeDefaults(settings);
-  settings.hasCompletedOnboarding = true;
-
-  const dir = path.dirname(CLAUDE_SETTINGS_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n');
-
-  console.log(green(t('apply.done_claude', { name })));
-  console.log(gray(`  ${t('apply.hint', { cmd: 'claude' })}`));
-}
-
-function applyCodex(name) {
-  const profile = store.readCodexProfile(name);
-  if (!profile) {
-    console.log(red(t('apply.failed')));
-    process.exit(1);
-  }
-
-  if (!fs.existsSync(CODEX_HOME_PATH)) {
-    fs.mkdirSync(CODEX_HOME_PATH, { recursive: true });
-  }
-
-  const auth = profile.auth || {};
-  fs.writeFileSync(
-    path.join(CODEX_HOME_PATH, 'auth.json'),
-    JSON.stringify(auth, null, 2) + '\n',
-  );
-
-  if (profile.configToml && profile.configToml.trim()) {
-    fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), profile.configToml);
-  }
-
-  console.log(green(t('apply.done_codex', { name })));
-  console.log(gray(`  ${t('apply.hint', { cmd: 'codex' })}`));
+  const info = await chooseProfile(options.profile);
+  const plan = info.type === 'codex' ? buildCodexPlan(info) : buildClaudePlan(info);
+  showPlan(info, plan, options.dryRun);
+  if (options.dryRun) return;
+  warning('Native configuration will change. A private backup will be created first.');
+  if (!options.yes && !await confirm('Continue?', false)) return;
+  executePlan(info, plan);
+  success(`Applied "${info.name}" safely`);
 }

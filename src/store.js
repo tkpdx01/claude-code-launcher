@@ -1,249 +1,389 @@
-// Profile CRUD — new slim format + old format auto-migration
+// Versioned profile storage with legacy Claude/Codex compatibility.
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import {
   CONFIG_DIR,
   PROFILES_DIR,
   CODEX_PROFILES_DIR,
+  TMP_DIR,
+  CACHE_DIR,
+  BACKUPS_DIR,
 } from './config.js';
+import {
+  atomicWriteJson,
+  enforcePrivateFile,
+  ensurePrivateDir,
+  removeEmptyParents,
+} from './fs-safe.js';
 
-// ---- Directory setup ----
+export const PROFILE_SCHEMA_VERSION = 2;
+export const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+export const CCC_OPENAI_COMPAT_PROVIDER = 'ccc_openai';
 
-export function ensureDirs() {
-  for (const dir of [CONFIG_DIR, PROFILES_DIR, CODEX_PROFILES_DIR]) {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+function chmodDirSafe(dir) {
+  try {
+    fs.chmodSync(dir, 0o700);
+  } catch (err) {
+    if (process.platform !== 'win32') throw err;
   }
 }
 
-// ---- Claude profiles ----
+function cleanupStaleRuntimeSettings() {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const entry of fs.readdirSync(TMP_DIR, { withFileTypes: true })) {
+    const target = path.join(TMP_DIR, entry.name);
+    let stat;
+    try {
+      stat = fs.statSync(target);
+    } catch {
+      continue;
+    }
+    if (stat.mtimeMs >= cutoff) {
+      if (entry.isFile()) enforcePrivateFile(target);
+      continue;
+    }
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+}
 
-function claudePath(name) {
+export function ensureDirs() {
+  for (const dir of [
+    CONFIG_DIR,
+    PROFILES_DIR,
+    CODEX_PROFILES_DIR,
+    TMP_DIR,
+    CACHE_DIR,
+    BACKUPS_DIR,
+  ]) {
+    ensurePrivateDir(dir);
+  }
+
+  for (const file of fs.readdirSync(PROFILES_DIR)) {
+    if (file.endsWith('.json')) enforcePrivateFile(path.join(PROFILES_DIR, file));
+  }
+
+  for (const entry of fs.readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(CODEX_PROFILES_DIR, entry.name);
+    chmodDirSafe(dir);
+    enforcePrivateFile(path.join(dir, 'auth.json'));
+    enforcePrivateFile(path.join(dir, 'config.toml'));
+  }
+  cleanupStaleRuntimeSettings();
+}
+
+function profilePath(name) {
   return path.join(PROFILES_DIR, `${name}.json`);
 }
 
-export function claudeProfileExists(name) {
-  return fs.existsSync(claudePath(name));
+function legacyCodexDir(name) {
+  return path.join(CODEX_PROFILES_DIR, name);
 }
 
-function getClaudeNames() {
-  ensureDirs();
-  return fs
-    .readdirSync(PROFILES_DIR)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => f.replace('.json', ''))
-    .sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
+function readRawProfile(name) {
+  const file = profilePath(name);
+  if (!fs.existsSync(file)) return null;
+  try {
+    enforcePrivateFile(file);
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
-// Parse profile from raw JSON — handles both old (full settings.json) and new (slim) formats.
-// Returns normalized shape: { type, apiUrl, apiKey, env?, settings?, model? }
-// Does NOT write to disk — callers decide whether to persist.
 function parseClaudeProfile(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  // New format: has "type" field
-  if (raw.type === 'claude' || raw.type === 'deepseek') return raw;
-  // Old format: full settings.json copy with env.ANTHROPIC_AUTH_TOKEN
-  if (raw.env?.ANTHROPIC_AUTH_TOKEN) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  if (raw.type === 'claude' || raw.type === 'deepseek') {
+    return {
+      schemaVersion: raw.schemaVersion || PROFILE_SCHEMA_VERSION,
+      ...raw,
+      type: raw.type,
+      model: raw.model || raw.settings?.model || '',
+    };
+  }
+
+  if (raw.env?.ANTHROPIC_AUTH_TOKEN || raw.env?.ANTHROPIC_API_KEY) {
     const { env = {}, ...restSettings } = raw;
-    const { ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ...restEnv } = env;
+    const {
+      ANTHROPIC_AUTH_TOKEN,
+      ANTHROPIC_API_KEY,
+      ANTHROPIC_BASE_URL,
+      ...restEnv
+    } = env;
     const result = {
+      schemaVersion: PROFILE_SCHEMA_VERSION,
       type: 'claude',
       apiUrl: ANTHROPIC_BASE_URL || '',
-      apiKey: ANTHROPIC_AUTH_TOKEN || '',
+      apiKey: ANTHROPIC_AUTH_TOKEN || ANTHROPIC_API_KEY || '',
+      model: restSettings.model || '',
     };
-    // Preserve extra env vars from old profile
     const filteredEnv = Object.fromEntries(
-      Object.entries(restEnv).filter(([k]) => !k.startsWith('CLAUDE_CODE_') && !k.startsWith('DISABLE_')),
+      Object.entries(restEnv).filter(([key]) =>
+        !key.startsWith('CLAUDE_CODE_') && !key.startsWith('DISABLE_')),
     );
     if (Object.keys(filteredEnv).length > 0) result.env = filteredEnv;
     if (Object.keys(restSettings).length > 0) result.settings = restSettings;
     return result;
   }
-  // Unknown but has apiKey (partially migrated?)
-  if (raw.apiKey !== undefined) return { type: 'claude', ...raw };
+
+  if (raw.apiKey !== undefined && raw.type !== 'codex') {
+    return {
+      schemaVersion: PROFILE_SCHEMA_VERSION,
+      type: 'claude',
+      ...raw,
+      model: raw.model || raw.settings?.model || '',
+    };
+  }
   return null;
 }
 
-export function readClaudeProfile(name) {
-  const p = claudePath(name);
-  if (!fs.existsSync(p)) return null;
-  try {
-    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return parseClaudeProfile(raw);
-  } catch {
-    return null;
-  }
+function getUnifiedNames() {
+  ensureDirs();
+  return fs.readdirSync(PROFILES_DIR)
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => file.slice(0, -5));
 }
 
-// Check if a profile is still in old (full settings.json) format on disk
+export function readClaudeProfile(name) {
+  return parseClaudeProfile(readRawProfile(name));
+}
+
+export function claudeProfileExists(name) {
+  return Boolean(readClaudeProfile(name));
+}
+
 export function isOldFormatProfile(name) {
-  const p = claudePath(name);
-  if (!fs.existsSync(p)) return false;
-  try {
-    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return raw.env?.ANTHROPIC_AUTH_TOKEN && !raw.type;
-  } catch {
-    return false;
-  }
+  const raw = readRawProfile(name);
+  return Boolean(raw?.env && !raw?.type);
 }
 
 export function saveClaudeProfile(name, profile) {
   ensureDirs();
-  const data = { type: 'claude', ...profile };
-  fs.writeFileSync(claudePath(name), JSON.stringify(data, null, 2) + '\n');
+  const type = profile.type === 'deepseek' ? 'deepseek' : 'claude';
+  const data = {
+    ...profile,
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    type,
+  };
+  atomicWriteJson(profilePath(name), data);
 }
 
 export function deleteClaudeProfile(name) {
-  const p = claudePath(name);
-  if (fs.existsSync(p)) fs.unlinkSync(p);
+  const raw = readRawProfile(name);
+  if (raw?.type === 'codex') return;
+  const file = profilePath(name);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
 }
 
 export function getClaudeCredentials(name) {
   const profile = readClaudeProfile(name);
-  if (!profile) return { apiKey: '', apiUrl: '' };
   return {
-    apiKey: profile.apiKey || '',
-    apiUrl: profile.apiUrl || '',
+    apiKey: profile?.apiKey || '',
+    apiUrl: profile?.apiUrl || '',
   };
 }
 
-// ---- Codex profiles ----
-
-const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-const CCC_OPENAI_COMPAT_PROVIDER = 'ccc_openai';
-
-function codexDir(name) {
-  return path.join(CODEX_PROFILES_DIR, name);
+export function normalizeBaseUrl(baseUrl) {
+  return (baseUrl || '').trim().replace(/\/+$/, '');
 }
 
-export function codexProfileExists(name) {
-  return fs.existsSync(path.join(codexDir(name), 'auth.json'));
+function parseCodexConfig(configToml) {
+  if (!configToml?.trim()) return {};
+  return parseToml(configToml);
 }
 
-function getCodexNames() {
-  ensureDirs();
-  if (!fs.existsSync(CODEX_PROFILES_DIR)) return [];
-  return fs
-    .readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && fs.existsSync(path.join(CODEX_PROFILES_DIR, d.name, 'auth.json')))
-    .map((d) => d.name)
-    .sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
+function findProvider(config, providerId) {
+  const providers = config.model_providers || {};
+  if (providerId && providers[providerId]) return providers[providerId];
+  const first = Object.values(providers)[0];
+  return first && typeof first === 'object' ? first : {};
 }
 
-export function readCodexProfile(name) {
-  const dir = codexDir(name);
+function codexDataFromLegacy(auth, configToml) {
+  const config = parseCodexConfig(configToml);
+  // v2.1.7 accidentally placed root keys under [analytics]. Read them so the
+  // affected profiles migrate without losing their model/provider selection.
+  const model = config.model || config.analytics?.model || '';
+  const providerId = config.model_provider || config.analytics?.model_provider || '';
+  const provider = findProvider(config, providerId);
+  return {
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    type: 'codex',
+    provider: 'openai',
+    apiKey: auth?.OPENAI_API_KEY || '',
+    apiUrl: normalizeBaseUrl(provider.base_url) || OPENAI_DEFAULT_BASE_URL,
+    model,
+    wireApi: provider.wire_api || 'responses',
+  };
+}
+
+function readUnifiedCodexProfile(name) {
+  const raw = readRawProfile(name);
+  if (raw?.type !== 'codex') return null;
+  return {
+    schemaVersion: raw.schemaVersion || PROFILE_SCHEMA_VERSION,
+    provider: 'openai',
+    wireApi: 'responses',
+    ...raw,
+    type: 'codex',
+    apiUrl: normalizeBaseUrl(raw.apiUrl) || OPENAI_DEFAULT_BASE_URL,
+    model: raw.model || '',
+  };
+}
+
+function readLegacyCodexProfile(name) {
+  const dir = legacyCodexDir(name);
   const authPath = path.join(dir, 'auth.json');
   const configPath = path.join(dir, 'config.toml');
   if (!fs.existsSync(authPath)) return null;
   try {
-    const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-    const configToml = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf-8') : '';
-    return { auth, configToml };
+    enforcePrivateFile(authPath);
+    enforcePrivateFile(configPath);
+    const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    const configToml = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
+    return codexDataFromLegacy(auth, configToml);
   } catch {
     return null;
   }
 }
 
-export function saveCodexProfile(name, auth, configToml) {
-  ensureDirs();
-  const dir = codexDir(name);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify(auth, null, 2) + '\n');
-  fs.writeFileSync(path.join(dir, 'config.toml'), configToml);
+export function readCodexProfileData(name) {
+  return readUnifiedCodexProfile(name) || readLegacyCodexProfile(name);
 }
 
-export function deleteCodexProfile(name) {
-  const dir = codexDir(name);
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+export function codexProfileExists(name) {
+  return Boolean(readCodexProfileData(name));
 }
 
-export function getCodexCredentials(name) {
-  const profile = readCodexProfile(name);
-  if (!profile) return { apiKey: '', baseUrl: '', model: '' };
-  const apiKey = profile.auth?.OPENAI_API_KEY || '';
-  let baseUrl = '';
-  let model = '';
-  if (profile.configToml) {
-    const bm = profile.configToml.match(/base_url\s*=\s*"([^"]+)"/);
-    if (bm) baseUrl = bm[1];
-    const mm = profile.configToml.match(/^model\s*=\s*"([^"]+)"/m);
-    if (mm) model = mm[1];
-  }
-  return { apiKey, baseUrl: baseUrl || OPENAI_DEFAULT_BASE_URL, model };
-}
-
-function normalizeBaseUrl(baseUrl) {
-  return (baseUrl || '').trim().replace(/\/+$/, '');
-}
-
-function isCustomOpenAIBaseUrl(baseUrl) {
-  const normalized = normalizeBaseUrl(baseUrl);
-  return normalized && normalized !== normalizeBaseUrl(OPENAI_DEFAULT_BASE_URL);
+export function buildCodexConfigObject(baseUrl, model, providerId = CCC_OPENAI_COMPAT_PROVIDER) {
+  const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
+  const config = {
+    model_provider: providerId,
+    model_providers: {
+      [providerId]: {
+        name: 'CCC OpenAI Compatible',
+        base_url: normalized,
+        env_key: 'OPENAI_API_KEY',
+        wire_api: 'responses',
+      },
+    },
+  };
+  if (model) config.model = model;
+  return config;
 }
 
 export function generateCodexConfigToml(baseUrl, model) {
-  const lines = ['# Codex profile managed by ccc'];
-  lines.push('[analytics]');
-  lines.push('enabled = false');
-  const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
-  if (model) lines.push(`model = "${model}"`);
-  if (isCustomOpenAIBaseUrl(normalized)) {
-    lines.push(`model_provider = "${CCC_OPENAI_COMPAT_PROVIDER}"`);
-    lines.push('');
-    lines.push(`[model_providers.${CCC_OPENAI_COMPAT_PROVIDER}]`);
-    lines.push('name = "OpenAI Compatible"');
-    lines.push(`base_url = "${normalized}"`);
-    lines.push('env_key = "OPENAI_API_KEY"');
-    lines.push('wire_api = "responses"');
-  }
-  lines.push('');
-  return lines.join('\n');
+  const body = stringifyToml(buildCodexConfigObject(baseUrl, model));
+  return `# Codex profile managed by ccc\n${body.trimEnd()}\n`;
+}
+
+export function readCodexProfile(name) {
+  const profile = readCodexProfileData(name);
+  if (!profile) return null;
+  return {
+    auth: { auth_mode: 'apikey', OPENAI_API_KEY: profile.apiKey || '' },
+    configToml: generateCodexConfigToml(profile.apiUrl, profile.model),
+    profile,
+    source: readUnifiedCodexProfile(name) ? 'unified' : 'legacy',
+  };
+}
+
+export function saveCodexProfileData(name, profile) {
+  ensureDirs();
+  atomicWriteJson(profilePath(name), {
+    provider: 'openai',
+    wireApi: 'responses',
+    ...profile,
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    type: 'codex',
+    apiUrl: normalizeBaseUrl(profile.apiUrl) || OPENAI_DEFAULT_BASE_URL,
+    model: profile.model || '',
+  });
+  // A successful v2 write supersedes the legacy auth/config files. Preserve
+  // sessions and databases in the directory, but remove duplicated secrets.
+  const legacyDir = legacyCodexDir(name);
+  fs.rmSync(path.join(legacyDir, 'auth.json'), { force: true });
+  fs.rmSync(path.join(legacyDir, 'config.toml'), { force: true });
+  if (fs.existsSync(legacyDir)) removeEmptyParents(legacyDir, CODEX_PROFILES_DIR);
+}
+
+export function saveCodexProfile(name, auth, configToml) {
+  saveCodexProfileData(name, codexDataFromLegacy(auth || {}, configToml || ''));
 }
 
 export function createCodexProfile(name, apiKey, baseUrl, model) {
-  const auth = { auth_mode: 'apikey', OPENAI_API_KEY: apiKey };
-  const configToml = generateCodexConfigToml(baseUrl, model);
-  saveCodexProfile(name, auth, configToml);
+  saveCodexProfileData(name, { apiKey, apiUrl: baseUrl, model });
 }
 
-// ---- Unified (Claude + Codex) ----
+export function deleteCodexProfile(name) {
+  const raw = readRawProfile(name);
+  if (raw?.type === 'codex') fs.unlinkSync(profilePath(name));
+
+  const dir = legacyCodexDir(name);
+  for (const file of ['auth.json', 'config.toml']) {
+    fs.rmSync(path.join(dir, file), { force: true });
+  }
+  if (fs.existsSync(dir)) removeEmptyParents(dir, CODEX_PROFILES_DIR);
+}
+
+export function getCodexCredentials(name) {
+  const profile = readCodexProfileData(name);
+  return {
+    apiKey: profile?.apiKey || '',
+    baseUrl: profile?.apiUrl || OPENAI_DEFAULT_BASE_URL,
+    model: profile?.model || '',
+  };
+}
+
+function getLegacyCodexNames() {
+  ensureDirs();
+  return fs.readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .filter((entry) => fs.existsSync(path.join(CODEX_PROFILES_DIR, entry.name, 'auth.json')))
+    .map((entry) => entry.name);
+}
 
 export function getAllProfiles() {
-  const claude = getClaudeNames().map((name) => {
-    const profile = readClaudeProfile(name);
-    const type = profile?.type === 'deepseek' ? 'deepseek' : 'claude';
-    return { name, type };
-  });
-  const codex = getCodexNames().map((name) => ({ name, type: 'codex' }));
-  return [...claude, ...codex].sort((a, b) =>
-    a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' }),
-  );
+  const profiles = new Map();
+  for (const name of getUnifiedNames()) {
+    const raw = readRawProfile(name);
+    if (raw?.type === 'codex') {
+      profiles.set(name, { name, type: 'codex' });
+      continue;
+    }
+    const profile = parseClaudeProfile(raw);
+    if (profile) profiles.set(name, { name, type: profile.type });
+  }
+  for (const name of getLegacyCodexNames()) {
+    if (!profiles.has(name)) profiles.set(name, { name, type: 'codex' });
+  }
+  return [...profiles.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' }));
 }
 
 export function resolveProfile(input) {
   const all = getAllProfiles();
-  const byName = all.find((p) => p.name === input);
+  const byName = all.find((profile) => profile.name === input);
   if (byName) return byName;
-  // Try as numeric index (1-based)
-  const num = parseInt(input, 10);
-  if (!isNaN(num) && num >= 1 && num <= all.length) {
-    return all[num - 1];
-  }
-  return null;
+  if (!/^\d+$/.test(String(input || ''))) return null;
+  const index = Number(input) - 1;
+  return index >= 0 && index < all.length ? all[index] : null;
 }
 
 export function anyProfileExists(name) {
-  if (claudeProfileExists(name)) {
-    const profile = readClaudeProfile(name);
-    const type = profile?.type === 'deepseek' ? 'deepseek' : 'claude';
-    return { exists: true, type };
-  }
-  if (codexProfileExists(name)) return { exists: true, type: 'codex' };
-  return { exists: false, type: null };
+  const profile = getAllProfiles().find((item) => item.name === name);
+  return profile
+    ? { exists: true, type: profile.type }
+    : { exists: false, type: null };
 }
 
-// ---- Codex profile dir path (for CODEX_HOME) ----
-
 export function getCodexProfileDir(name) {
-  return codexDir(name);
+  return fs.existsSync(legacyCodexDir(name)) ? legacyCodexDir(name) : PROFILES_DIR;
+}
+
+export function getProfilePath(name) {
+  return profilePath(name);
 }
