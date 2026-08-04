@@ -223,14 +223,17 @@ function codexDataFromLegacy(auth, configToml) {
 function readUnifiedCodexProfile(name) {
   const raw = readRawProfile(name);
   if (raw?.type !== 'codex') return null;
+  const sanitized = { ...raw };
+  delete sanitized.model_catalog_json;
+  delete sanitized.modelCatalogJson;
   return {
-    schemaVersion: raw.schemaVersion || PROFILE_SCHEMA_VERSION,
+    schemaVersion: sanitized.schemaVersion || PROFILE_SCHEMA_VERSION,
     provider: 'openai',
     wireApi: 'responses',
-    ...raw,
+    ...sanitized,
     type: 'codex',
-    apiUrl: normalizeBaseUrl(raw.apiUrl) || OPENAI_DEFAULT_BASE_URL,
-    model: raw.model || '',
+    apiUrl: normalizeBaseUrl(sanitized.apiUrl) || OPENAI_DEFAULT_BASE_URL,
+    model: sanitized.model || '',
   };
 }
 
@@ -293,14 +296,17 @@ export function readCodexProfile(name) {
 
 export function saveCodexProfileData(name, profile) {
   ensureDirs();
+  const sanitized = { ...profile };
+  delete sanitized.model_catalog_json;
+  delete sanitized.modelCatalogJson;
   atomicWriteJson(profilePath(name), {
     provider: 'openai',
     wireApi: 'responses',
-    ...profile,
+    ...sanitized,
     schemaVersion: PROFILE_SCHEMA_VERSION,
     type: 'codex',
-    apiUrl: normalizeBaseUrl(profile.apiUrl) || OPENAI_DEFAULT_BASE_URL,
-    model: profile.model || '',
+    apiUrl: normalizeBaseUrl(sanitized.apiUrl) || OPENAI_DEFAULT_BASE_URL,
+    model: sanitized.model || '',
   });
   // A successful v2 write supersedes the legacy auth/config files. Preserve
   // sessions and databases in the directory, but remove duplicated secrets.

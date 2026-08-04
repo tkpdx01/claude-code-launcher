@@ -112,6 +112,7 @@ New profiles use a versioned format:
 - API keys are entered with masked prompts and never printed by `show`, `doctor`, or apply previews.
 - Writes use a temporary file, `fsync`, and atomic rename.
 - Invalid native JSON/TOML stops `apply`; it is never silently replaced.
+- Codex launches and `doctor` reject a `model_catalog_json` that is missing, invalid, or does not contain the selected model. `ccc apply <profile> --yes` removes only an incompatible catalog so the current Codex bundled metadata is used.
 - Legacy Claude and Codex profiles remain readable. Editing a legacy Codex profile migrates its managed credentials while preserving sessions and databases.
 - `skipWebFetchPreflight: true` is applied only to custom Claude endpoints, unless explicitly overridden.
 

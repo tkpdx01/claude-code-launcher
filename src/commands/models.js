@@ -2,8 +2,12 @@ import * as store from '../store.js';
 import { discoverModels, promptModel } from '../models.js';
 import { select } from '../prompt.js';
 import { dim, gray } from '../color.js';
-import { panel, redactUrl, success, typeBadge } from '../ui.js';
+import { panel, redactUrl, success, typeBadge, warning } from '../ui.js';
 import { validateModelId } from '../validation.js';
+import {
+  codexModelCatalogConflictMessage,
+  inspectNativeCodexModelCatalog,
+} from '../codex-catalog.js';
 
 async function chooseProfile(token, message = 'Select profile:') {
   if (token) {
@@ -69,7 +73,14 @@ export async function modelCommand(args) {
   }
   model = validateModelId(model);
 
-  if (info.type === 'codex') store.saveCodexProfileData(info.name, { ...profile, model });
-  else store.saveClaudeProfile(info.name, { ...profile, model, type: info.type });
+  if (info.type === 'codex') {
+    store.saveCodexProfileData(info.name, { ...profile, model });
+    const catalog = inspectNativeCodexModelCatalog(model);
+    if (!catalog.compatible) {
+      warning(codexModelCatalogConflictMessage(catalog, model, info.name));
+    }
+  } else {
+    store.saveClaudeProfile(info.name, { ...profile, model, type: info.type });
+  }
   success(`Model for "${info.name}" set to ${model || 'upstream default'}`);
 }

@@ -5,8 +5,12 @@ import { promptModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
 import { launchClaude } from '../claude.js';
 import { launchCodex } from '../codex.js';
-import { panel, redactUrl, success, typeBadge } from '../ui.js';
+import { panel, redactUrl, success, typeBadge, warning } from '../ui.js';
 import { normalizeSecret, validateApiUrl, validateModelId } from '../validation.js';
+import {
+  codexModelCatalogConflictMessage,
+  inspectNativeCodexModelCatalog,
+} from '../codex-catalog.js';
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
 
@@ -61,6 +65,10 @@ export async function newCommand(args) {
     const model = validateModelId(options.model || await promptModel({ type: 'codex', baseUrl: apiUrl, apiKey }));
     store.createCodexProfile(name, apiKey, apiUrl, model);
     if (existing.type === 'claude' || existing.type === 'deepseek') store.deleteClaudeProfile(name);
+    const catalog = inspectNativeCodexModelCatalog(model);
+    if (!catalog.compatible) {
+      warning(codexModelCatalogConflictMessage(catalog, model, name));
+    }
     success(t('new.created_codex', { name }));
     panel('Profile ready', [
       ['Type', typeBadge('codex')],

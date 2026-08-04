@@ -1,12 +1,16 @@
 // Codex launch logic — invocation-scoped provider config, shared user state.
 
 import { stringify as stringifyToml } from 'smol-toml';
-import { hasCodexModelOverride } from './args.js';
+import { getCodexModelOverride, hasCodexModelOverride } from './args.js';
 import { buildCodexEnv } from './env.js';
 import * as store from './store.js';
 import { t } from './i18n.js';
 import { commandPreview, danger, panel, redactUrl, typeBadge } from './ui.js';
 import { manageChildLifecycle, spawnCli } from './spawn.js';
+import {
+  codexModelCatalogConflictMessage,
+  inspectNativeCodexModelCatalog,
+} from './codex-catalog.js';
 
 function tomlLiteral(value) {
   const line = stringifyToml({ value }).trim();
@@ -42,6 +46,13 @@ export function launchCodex(profileName, options = {}) {
   const profile = store.readCodexProfileData(profileName);
   if (!profile) throw new Error(t('common.not_exist', { name: profileName }));
   if (!profile.apiKey) throw new Error(t('common.apikey_required'));
+
+  const cliModel = getCodexModelOverride(normalized.args);
+  const effectiveModel = cliModel === null ? profile.model : cliModel;
+  const catalog = inspectNativeCodexModelCatalog(effectiveModel);
+  if (!catalog.compatible) {
+    throw new Error(codexModelCatalogConflictMessage(catalog, effectiveModel, profileName));
+  }
 
   const args = buildCodexArgs(profile, normalized);
   const env = buildCodexEnv(profile.apiKey);

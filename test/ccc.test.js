@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parse as parseToml } from 'smol-toml';
-import { parseInvocation } from '../src/args.js';
+import { getCodexModelOverride, parseInvocation } from '../src/args.js';
 import { applyClaudeDefaults } from '../src/claude-settings.js';
 import { buildClaudeSettings } from '../src/claude.js';
 import { buildClaudeEnv } from '../src/env.js';
@@ -124,6 +124,12 @@ function createProfiles(sandbox) {
     "store.createCodexProfile('cx', 'codex-secret', 'https://codex.example.invalid/v1', 'gpt-5.6-terra');",
   ].join(' '));
   assert.equal(result.status, 0, result.stderr);
+}
+
+function writeModelCatalog(file, modelIds) {
+  fs.writeFileSync(file, JSON.stringify({
+    models: modelIds.map((slug) => ({ slug })),
+  }));
 }
 
 test('legacy Claude profiles keep top-level settings during parsing', () => {
@@ -254,6 +260,8 @@ test('argument parser preserves passthrough order and consumes only CCC dangerou
     { kind: 'launch', profile: 'cl', dangerous: false, args: ['--', '-d', 'api'] },
   );
   assert.equal(parseInvocation(['cl', '--help']).args[0], '--help');
+  assert.equal(getCodexModelOverride(['-m', 'first', '--model=last']), 'last');
+  assert.equal(getCodexModelOverride(['--', '-m', 'literal']), null);
 });
 
 test('Claude launch forwards arguments, honors -d and removes runtime settings', () => {
@@ -323,6 +331,31 @@ test('Codex launch shares CODEX_HOME, injects provider, forwards repeats and map
   }
 });
 
+test('Codex launch blocks a stale native catalog and honors the CLI model override', () => {
+  const sandbox = makeSandbox();
+  try {
+    createProfiles(sandbox);
+    const catalogName = 'model-catalog.gpt-5.5.json';
+    writeModelCatalog(path.join(sandbox.codexHome, catalogName), ['gpt-5.5']);
+    fs.writeFileSync(
+      path.join(sandbox.codexHome, 'config.toml'),
+      `model_catalog_json = "${catalogName}"\n`,
+    );
+
+    const blocked = runCli(sandbox, ['cx']);
+    assert.equal(blocked.status, 1);
+    assert.equal(blocked.capture, null);
+    assert.match(blocked.stderr, /catalog conflict.*gpt-5\.6-terra/i);
+    assert.match(blocked.stderr, /ccc apply cx --yes/);
+
+    const compatibleOverride = runCli(sandbox, ['cx', '-m', 'gpt-5.5']);
+    assert.equal(compatibleOverride.status, 0, compatibleOverride.stderr);
+    assert.deepEqual(compatibleOverride.capture.args.slice(-2), ['-m', 'gpt-5.5']);
+  } finally {
+    cleanupSandbox(sandbox);
+  }
+});
+
 test('DeepSeek profile model is passed to Claude instead of being blanked', () => {
   const sandbox = makeSandbox();
   try {
@@ -381,6 +414,26 @@ test('model command can explicitly restore the upstream default', () => {
   }
 });
 
+test('model command warns when the native catalog does not contain the new model', () => {
+  const sandbox = makeSandbox();
+  try {
+    createProfiles(sandbox);
+    const catalogName = 'model-catalog.gpt-5.5.json';
+    writeModelCatalog(path.join(sandbox.codexHome, catalogName), ['gpt-5.5']);
+    fs.writeFileSync(
+      path.join(sandbox.codexHome, 'config.toml'),
+      `model_catalog_json = "${catalogName}"\n`,
+    );
+
+    const changed = runCli(sandbox, ['model', 'cx', 'gpt-5.6-sol']);
+    assert.equal(changed.status, 0, changed.stderr);
+    assert.match(changed.stdout, /catalog conflict.*gpt-5\.6-sol/i);
+    assert.match(changed.stdout, /ccc apply cx --yes/);
+  } finally {
+    cleanupSandbox(sandbox);
+  }
+});
+
 test('v2 Codex migration removes duplicate legacy credentials but preserves sessions', () => {
   const sandbox = makeSandbox();
   try {
@@ -391,13 +444,15 @@ test('v2 Codex migration removes duplicate legacy credentials but preserves sess
     fs.writeFileSync(path.join(legacy, 'sessions', 'keep.jsonl'), '{}\n');
     const result = runInline(sandbox, [
       "import * as store from './src/store.js';",
-      "store.saveCodexProfileData('legacy', { apiKey: 'new-secret', apiUrl: 'https://example.invalid/v1', model: 'gpt-5.5' });",
+      "store.saveCodexProfileData('legacy', { apiKey: 'new-secret', apiUrl: 'https://example.invalid/v1', model: 'gpt-5.5', model_catalog_json: 'stale.json' });",
     ].join(' '));
     assert.equal(result.status, 0, result.stderr);
     assert.equal(fs.existsSync(path.join(legacy, 'auth.json')), false);
     assert.equal(fs.existsSync(path.join(legacy, 'config.toml')), false);
     assert.equal(fs.existsSync(path.join(legacy, 'sessions', 'keep.jsonl')), true);
-    assert.equal(fs.existsSync(path.join(sandbox.home, '.ccc', 'profiles', 'legacy.json')), true);
+    const unifiedPath = path.join(sandbox.home, '.ccc', 'profiles', 'legacy.json');
+    assert.equal(fs.existsSync(unifiedPath), true);
+    assert.equal(JSON.parse(fs.readFileSync(unifiedPath, 'utf8')).model_catalog_json, undefined);
   } finally {
     cleanupSandbox(sandbox);
   }
@@ -410,7 +465,9 @@ test('apply backs up, merges atomically and rolls back Codex config', () => {
     const authPath = path.join(sandbox.codexHome, 'auth.json');
     const configPath = path.join(sandbox.codexHome, 'config.toml');
     const oldAuth = '{"auth_mode":"chatgpt","other":"keep"}\n';
-    const oldConfig = 'theme = "dark"\n';
+    const catalogName = 'model-catalog.gpt-5.5.json';
+    writeModelCatalog(path.join(sandbox.codexHome, catalogName), ['gpt-5.5']);
+    const oldConfig = `theme = "dark"\nmodel_catalog_json = "${catalogName}"\n`;
     fs.writeFileSync(authPath, oldAuth);
     fs.writeFileSync(configPath, oldConfig);
 
@@ -423,12 +480,36 @@ test('apply backs up, merges atomically and rolls back Codex config', () => {
     assert.equal(config.theme, 'dark');
     assert.equal(config.model, 'gpt-5.6-terra');
     assert.equal(config.model_provider, 'ccc_openai');
+    assert.equal(config.model_catalog_json, undefined);
+    assert.match(applied.stdout, /model_catalog_json will be removed/);
     if (process.platform !== 'win32') assert.equal(fs.statSync(authPath).mode & 0o777, 0o600);
 
     const rolledBack = runCli(sandbox, ['apply', '--rollback', '--yes']);
     assert.equal(rolledBack.status, 0, rolledBack.stderr);
     assert.equal(fs.readFileSync(authPath, 'utf8'), oldAuth);
     assert.equal(fs.readFileSync(configPath, 'utf8'), oldConfig);
+  } finally {
+    cleanupSandbox(sandbox);
+  }
+});
+
+test('apply preserves a custom catalog that contains the profile model', () => {
+  const sandbox = makeSandbox();
+  try {
+    createProfiles(sandbox);
+    const catalogName = 'custom-model-catalog.json';
+    writeModelCatalog(path.join(sandbox.codexHome, catalogName), ['gpt-5.6-terra']);
+    fs.writeFileSync(path.join(sandbox.codexHome, 'auth.json'), '{}\n');
+    fs.writeFileSync(
+      path.join(sandbox.codexHome, 'config.toml'),
+      `model_catalog_json = "${catalogName}"\n`,
+    );
+
+    const applied = runCli(sandbox, ['apply', 'cx', '--yes']);
+    assert.equal(applied.status, 0, applied.stderr);
+    const config = parseToml(fs.readFileSync(path.join(sandbox.codexHome, 'config.toml'), 'utf8'));
+    assert.equal(config.model_catalog_json, catalogName);
+    assert.doesNotMatch(applied.stdout, /model_catalog_json will be removed/);
   } finally {
     cleanupSandbox(sandbox);
   }
@@ -542,6 +623,29 @@ test('doctor supports stable JSON output with stored profiles', () => {
     assert.equal(report.ok, true);
     assert.equal(report.codexHome, sandbox.codexHome);
     assert.ok(report.checks.some((check) => check.label === 'claude executable'));
+  } finally {
+    cleanupSandbox(sandbox);
+  }
+});
+
+test('doctor fails a Codex profile whose native catalog is stale', () => {
+  const sandbox = makeSandbox();
+  try {
+    createProfiles(sandbox);
+    const catalogName = 'model-catalog.gpt-5.5.json';
+    writeModelCatalog(path.join(sandbox.codexHome, catalogName), ['gpt-5.5']);
+    fs.writeFileSync(
+      path.join(sandbox.codexHome, 'config.toml'),
+      `model_catalog_json = "${catalogName}"\n`,
+    );
+
+    const result = runCli(sandbox, ['doctor', '--json']);
+    assert.equal(result.status, 1);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.ok, false);
+    const check = report.checks.find((item) => item.label === 'cx Codex config');
+    assert.equal(check.status, 'fail');
+    assert.match(check.detail, /missing model "gpt-5\.6-terra"/);
   } finally {
     cleanupSandbox(sandbox);
   }

@@ -14,6 +14,10 @@ import {
 import { confirm, select } from '../prompt.js';
 import { gray } from '../color.js';
 import { panel, redactSecrets, success, typeBadge, warning } from '../ui.js';
+import {
+  describeCodexModelCatalog,
+  inspectCodexModelCatalog,
+} from '../codex-catalog.js';
 
 const MANIFEST_PATH = path.join(BACKUPS_DIR, 'last-apply.json');
 
@@ -78,6 +82,13 @@ function buildCodexPlan(info) {
   const auth = readJsonObject(authPath, authPath);
   const config = readTomlObject(configPath);
   const providerId = store.CCC_OPENAI_COMPAT_PROVIDER;
+  const catalog = inspectCodexModelCatalog(config, profile.model, { configPath });
+  let catalogNotice = '';
+
+  if (catalog.configured && !catalog.compatible) {
+    delete config.model_catalog_json;
+    catalogNotice = `Incompatible model_catalog_json will be removed (${describeCodexModelCatalog(catalog, profile.model)}) so Codex uses its bundled metadata.`;
+  }
 
   if (config.analytics && typeof config.analytics === 'object') {
     delete config.analytics.model;
@@ -113,6 +124,7 @@ function buildCodexPlan(info) {
       label: 'codex-config.toml',
       content: `${stringifyToml(config).trimEnd()}\n`,
       preview: `${stringifyToml(redactSecrets(config)).trimEnd()}\n`,
+      notice: catalogNotice,
     },
   ];
 }
@@ -124,6 +136,7 @@ function showPlan(info, plan, dryRun) {
     ['Mode', dryRun ? 'dry run · no files changed' : 'backup + atomic write'],
   ]);
   for (const file of plan) {
+    if (file.notice) warning(file.notice);
     console.log(`\n  ${file.target}`);
     console.log(gray(file.preview.split('\n').map((line) => `    ${line}`).join('\n')));
   }

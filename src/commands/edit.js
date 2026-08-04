@@ -3,8 +3,12 @@ import { t } from '../i18n.js';
 import { input, password, select } from '../prompt.js';
 import { promptModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
-import { maskSecret, panel, redactUrl, success, typeBadge } from '../ui.js';
+import { maskSecret, panel, redactUrl, success, typeBadge, warning } from '../ui.js';
 import { normalizeSecret, validateApiUrl, validateModelId } from '../validation.js';
+import {
+  codexModelCatalogConflictMessage,
+  inspectNativeCodexModelCatalog,
+} from '../codex-catalog.js';
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
 
@@ -51,6 +55,11 @@ export async function editCommand(args) {
     validateRename(info.name, newName);
     store.saveCodexProfileData(newName || info.name, { ...current, apiUrl, apiKey, model });
     if (newName && newName !== info.name) store.deleteCodexProfile(info.name);
+    const savedName = newName || info.name;
+    const catalog = inspectNativeCodexModelCatalog(model);
+    if (!catalog.compatible) {
+      warning(codexModelCatalogConflictMessage(catalog, model, savedName));
+    }
     success(newName && newName !== info.name
       ? t('edit.renamed', { name: newName })
       : t('edit.updated', { name: info.name }));

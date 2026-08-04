@@ -8,6 +8,10 @@ import * as store from '../store.js';
 import { generateCodexConfigToml } from '../store.js';
 import { gray, green, red, yellow } from '../color.js';
 import { panel } from '../ui.js';
+import {
+  describeCodexModelCatalog,
+  inspectNativeCodexModelCatalog,
+} from '../codex-catalog.js';
 
 function executableVersion(command) {
   const result = crossSpawn.sync(command, ['--version'], {
@@ -87,10 +91,13 @@ export async function doctorCommand(args) {
         profile.profile.apiUrl,
         profile.profile.model,
       ));
+      const catalog = inspectNativeCodexModelCatalog(profile.profile.model);
       checks.push({
-        status: parsed.model_provider && (!profile.profile.model || parsed.model === profile.profile.model) ? 'ok' : 'fail',
+        status: parsed.model_provider
+          && (!profile.profile.model || parsed.model === profile.profile.model)
+          && catalog.compatible ? 'ok' : 'fail',
         label: `${info.name} Codex config`,
-        detail: `${parsed.model || '<default>'} · ${parsed.model_provider || '<missing provider>'}`,
+        detail: `${parsed.model || '<default>'} · ${parsed.model_provider || '<missing provider>'} · ${describeCodexModelCatalog(catalog, profile.profile.model)}`,
       });
       if (profile.source === 'legacy') {
         checks.push({

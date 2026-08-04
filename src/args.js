@@ -68,6 +68,21 @@ export function hasClaudeModelOverride(args) {
   return hasOption(args, ['--model']);
 }
 
+export function getCodexModelOverride(args) {
+  let model = null;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--') break;
+    if (arg === '-m' || arg === '--model') {
+      model = args[index + 1] ?? '';
+      index += 1;
+    } else if (arg.startsWith('-m=') || arg.startsWith('--model=')) {
+      model = arg.slice(arg.indexOf('=') + 1);
+    }
+  }
+  return model;
+}
+
 export function hasCodexModelOverride(args) {
-  return hasOption(args, ['-m', '--model']);
+  return getCodexModelOverride(args) !== null;
 }
