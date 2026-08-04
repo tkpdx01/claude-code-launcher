@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.1 - 2026-08-04
+
+### Fixes
+
+- Prevent stale `model_catalog_json` files from silently overriding Codex's bundled metadata when profiles switch to newer models.
+- Validate catalog/profile consistency during launch, model changes, and `ccc doctor`; remove incompatible overrides safely through `ccc apply` while preserving compatible custom catalogs.
+
 ## 2.2.0
 
 - Rebuilt launch parsing as a transparent Claude/Codex argument proxy.

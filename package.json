@@ -1,6 +1,6 @@
 {
   "name": "@tkpdx01/ccc",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "A polished, secure profile launcher for Claude Code and OpenAI Codex",
   "main": "index.js",
   "bin": {
