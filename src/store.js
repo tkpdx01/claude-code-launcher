@@ -21,6 +21,7 @@ import {
 export const PROFILE_SCHEMA_VERSION = 2;
 export const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 export const CCC_OPENAI_COMPAT_PROVIDER = 'ccc_openai';
+export const CCC_OPENAI_API_KEY_ENV = 'CCC_OPENAI_API_KEY';
 
 function chmodDirSafe(dir) {
   try {
@@ -269,7 +270,7 @@ export function buildCodexConfigObject(baseUrl, model, providerId = CCC_OPENAI_C
       [providerId]: {
         name: 'CCC OpenAI Compatible',
         base_url: normalized,
-        env_key: 'OPENAI_API_KEY',
+        env_key: CCC_OPENAI_API_KEY_ENV,
         wire_api: 'responses',
       },
     },

@@ -2,6 +2,11 @@
 
 import { stringify as stringifyToml } from 'smol-toml';
 import { getCodexModelOverride, hasCodexModelOverride } from './args.js';
+import {
+  buildLaunchCodexProvider,
+  restoreLeakedNativeCodexProvider,
+  snapshotNativeCodexProvider,
+} from './codex-native.js';
 import { buildCodexEnv } from './env.js';
 import * as store from './store.js';
 import { t } from './i18n.js';
@@ -25,13 +30,15 @@ function normalizeOptions(options) {
 export function buildCodexArgs(profile, options = {}) {
   const normalized = normalizeOptions(options);
   const providerId = store.CCC_OPENAI_COMPAT_PROVIDER;
+  const provider = buildLaunchCodexProvider(profile);
   const passthrough = [...normalized.args];
   const args = [
     '-c', `model_provider=${tomlLiteral(providerId)}`,
-    '-c', `model_providers.${providerId}.name=${tomlLiteral('CCC OpenAI Compatible')}`,
-    '-c', `model_providers.${providerId}.base_url=${tomlLiteral(profile.apiUrl)}`,
-    '-c', `model_providers.${providerId}.env_key=${tomlLiteral('OPENAI_API_KEY')}`,
-    '-c', `model_providers.${providerId}.wire_api=${tomlLiteral(profile.wireApi || 'responses')}`,
+    '-c', `model_providers.${providerId}.name=${tomlLiteral(provider.name)}`,
+    '-c', `model_providers.${providerId}.base_url=${tomlLiteral(provider.base_url)}`,
+    '-c', `model_providers.${providerId}.env_key=${tomlLiteral(provider.env_key)}`,
+    '-c', `model_providers.${providerId}.wire_api=${tomlLiteral(provider.wire_api)}`,
+    '-c', `model_providers.${providerId}.requires_openai_auth=${tomlLiteral(provider.requires_openai_auth)}`,
   ];
   if (profile.model && !hasCodexModelOverride(passthrough)) {
     args.push('-m', profile.model);
@@ -56,6 +63,7 @@ export function launchCodex(profileName, options = {}) {
 
   const args = buildCodexArgs(profile, normalized);
   const env = buildCodexEnv(profile.apiKey);
+  const nativeProvider = snapshotNativeCodexProvider();
 
   if (process.stdout.isTTY) {
     panel('Launch', [
@@ -70,6 +78,13 @@ export function launchCodex(profileName, options = {}) {
 
   const child = spawnCli('codex', args, { stdio: 'inherit', env });
   manageChildLifecycle(child, {
+    cleanup: () => {
+      try {
+        restoreLeakedNativeCodexProvider(nativeProvider);
+      } catch (err) {
+        console.error(`Failed to restore native Codex provider: ${err.message}`);
+      }
+    },
     onError: (err) => console.error(t('launch.failed', { msg: err.message })),
   });
 }

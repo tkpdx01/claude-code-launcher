@@ -18,6 +18,11 @@ import {
   describeCodexModelCatalog,
   inspectCodexModelCatalog,
 } from '../codex-catalog.js';
+import {
+  buildApplyCodexProvider,
+  readNativeCodexConfigText,
+  stripCccCodexProvider,
+} from '../codex-native.js';
 
 const MANIFEST_PATH = path.join(BACKUPS_DIR, 'last-apply.json');
 
@@ -25,6 +30,7 @@ function parseOptions(args) {
   return {
     dryRun: args.includes('--dry-run'),
     rollback: args.includes('--rollback'),
+    restoreNative: args.includes('--restore-native'),
     yes: args.includes('--yes'),
     profile: args.find((arg) => !arg.startsWith('-')) || '',
   };
@@ -99,12 +105,7 @@ function buildCodexPlan(info) {
   else delete config.model;
   config.model_providers = {
     ...(config.model_providers || {}),
-    [providerId]: {
-      name: 'CCC OpenAI Compatible',
-      base_url: profile.apiUrl,
-      env_key: 'OPENAI_API_KEY',
-      wire_api: profile.wireApi || 'responses',
-    },
+    [providerId]: buildApplyCodexProvider(profile),
   };
 
   const nextAuth = {
@@ -184,6 +185,53 @@ export function executePlan(info, plan) {
   }
 }
 
+async function restoreNative(options) {
+  const { configPath, existed, text } = readNativeCodexConfigText();
+  panel('Restore native Codex', [
+    ['Target', configPath],
+    ['Mode', options.dryRun ? 'dry run · no files changed' : 'backup + surgical edit'],
+  ]);
+  if (!existed) {
+    success('Native Codex config is not pinned to a CCC provider');
+    return;
+  }
+
+  let plan;
+  try {
+    plan = stripCccCodexProvider(text);
+  } catch (err) {
+    throw new Error(`${configPath} is invalid TOML: ${err.message}`);
+  }
+
+  if (!plan.changed) {
+    success('Native Codex is not pinned to a CCC provider');
+    return;
+  }
+
+  console.log(`\n  ${configPath}`);
+  console.log(gray(plan.next.split('\n').slice(0, 24).map((line) => `    ${line}`).join('\n')));
+  if (options.dryRun) return;
+
+  warning('This removes CCC as the default Codex provider so ChatGPT login works again. Profile credentials are unchanged.');
+  if (!options.yes && !await confirm('Continue?', false)) return;
+
+  ensurePrivateDir(BACKUPS_DIR);
+  const backup = backupFile(configPath, BACKUPS_DIR, 'codex-config.toml');
+  try {
+    atomicWriteFile(configPath, plan.next);
+    atomicWriteJson(MANIFEST_PATH, {
+      createdAt: new Date().toISOString(),
+      profile: '(restore-native)',
+      type: 'codex',
+      files: [{ target: configPath, backup, existed: true }],
+    });
+  } catch (err) {
+    if (backup && fs.existsSync(backup)) atomicWriteFile(configPath, fs.readFileSync(backup));
+    throw err;
+  }
+  success('Native Codex provider restored. Run `codex` with ChatGPT login, or `ccc <profile>` for a gateway.');
+}
+
 async function rollback(options) {
   const manifest = readJsonStrict(MANIFEST_PATH, { allowMissing: false, label: 'Apply backup manifest' });
   panel('Rollback', [
@@ -198,8 +246,15 @@ async function rollback(options) {
 
 export async function applyCommand(args) {
   const options = parseOptions(args);
+  if (options.rollback && options.restoreNative) {
+    throw new Error('Use either --rollback or --restore-native, not both');
+  }
   if (options.rollback) {
     await rollback(options);
+    return;
+  }
+  if (options.restoreNative) {
+    await restoreNative(options);
     return;
   }
 

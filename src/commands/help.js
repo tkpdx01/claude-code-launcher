@@ -28,6 +28,7 @@ export function helpCommand(version = '') {
   row('ccc model <profile> [model-id]', 'Set an arbitrary model ID');
   row('ccc doctor [--json]', 'Check binaries, config and permissions');
   row('ccc apply [profile] [--dry-run]', 'Safely apply to native config');
+  row('ccc apply --restore-native', 'Unpin native Codex from CCC provider');
   console.log();
 
   console.log(`  ${bold(green('Examples'))}`);

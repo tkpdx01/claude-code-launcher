@@ -11,6 +11,10 @@ import { buildClaudeSettings } from '../src/claude.js';
 import { buildClaudeEnv } from '../src/env.js';
 import { OPENAI_MODEL_CATALOG } from '../src/models.js';
 import { generateCodexConfigToml } from '../src/store.js';
+import {
+  revertLeakedCccCodexProvider,
+  stripCccCodexProvider,
+} from '../src/codex-native.js';
 
 const repoRoot = process.cwd();
 const cliPath = path.join(repoRoot, 'index.js');
@@ -53,10 +57,23 @@ const payload = {
   env: {
     CODEX_HOME: process.env.CODEX_HOME || null,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY || null,
+    CCC_OPENAI_API_KEY: process.env.CCC_OPENAI_API_KEY || null,
     ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN || null,
     ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || null
   }
 };
+if (process.env.CCC_FAKE_PERSIST_PROVIDER && process.env.CODEX_HOME) {
+  const path = require('node:path');
+  const file = path.join(process.env.CODEX_HOME, 'config.toml');
+  let existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  if (!/^model_provider\\s*=/m.test(existing)) {
+    existing = 'model_provider = "ccc_openai"\\n' + existing;
+  }
+  if (!existing.includes('[model_providers.ccc_openai]')) {
+    existing = existing.trimEnd() + '\\n\\n[model_providers.ccc_openai]\\nenv_key = "OPENAI_API_KEY"\\n';
+  }
+  fs.writeFileSync(file, existing);
+}
 if (process.env.CCC_CAPTURE) fs.writeFileSync(process.env.CCC_CAPTURE, JSON.stringify(payload));
 process.exit(Number(process.env.CCC_FAKE_EXIT || 0));
 `;
@@ -320,8 +337,11 @@ test('Codex launch shares CODEX_HOME, injects provider, forwards repeats and map
     assert.equal(result.stdout, '');
     assert.equal(result.capture.env.CODEX_HOME, sandbox.codexHome);
     assert.equal(result.capture.env.OPENAI_API_KEY, 'codex-secret');
+    assert.equal(result.capture.env.CCC_OPENAI_API_KEY, 'codex-secret');
     assert.ok(result.capture.args.includes('model_provider="ccc_openai"'));
     assert.ok(result.capture.args.includes('model_providers.ccc_openai.base_url="https://codex.example.invalid/v1"'));
+    assert.ok(result.capture.args.includes('model_providers.ccc_openai.env_key="CCC_OPENAI_API_KEY"'));
+    assert.ok(result.capture.args.includes('model_providers.ccc_openai.requires_openai_auth=false'));
     assert.deepEqual(result.capture.args.slice(-10), [
       '--dangerously-bypass-approvals-and-sandbox',
       '-m', 'gpt-5.6-luna', '-C', '/tmp/a b', '-c', 'x=1', '-c', 'y=2', 'fix it',
@@ -476,10 +496,13 @@ test('apply backs up, merges atomically and rolls back Codex config', () => {
     const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
     const config = parseToml(fs.readFileSync(configPath, 'utf8'));
     assert.equal(auth.OPENAI_API_KEY, 'codex-secret');
+    assert.equal(auth.auth_mode, 'apikey');
     assert.equal(auth.other, 'keep');
     assert.equal(config.theme, 'dark');
     assert.equal(config.model, 'gpt-5.6-terra');
     assert.equal(config.model_provider, 'ccc_openai');
+    assert.equal(config.model_providers.ccc_openai.requires_openai_auth, true);
+    assert.equal(config.model_providers.ccc_openai.env_key, undefined);
     assert.equal(config.model_catalog_json, undefined);
     assert.match(applied.stdout, /model_catalog_json will be removed/);
     if (process.platform !== 'win32') assert.equal(fs.statSync(authPath).mode & 0o777, 0o600);
@@ -513,6 +536,173 @@ test('apply preserves a custom catalog that contains the profile model', () => {
   } finally {
     cleanupSandbox(sandbox);
   }
+});
+
+test('apply --restore-native unpins CCC without rewriting unrelated Codex config', () => {
+  const sandbox = makeSandbox();
+  try {
+    const configPath = path.join(sandbox.codexHome, 'config.toml');
+    fs.writeFileSync(configPath, [
+      '# Codex profile managed by ccc',
+      '# keep this comment',
+      'model = "gpt-6-astra"',
+      'model_provider = "ccc_openai"',
+      'theme = "dark"',
+      '',
+      '[model_providers.ccc_openai]',
+      'name = "OpenAI Compatible"',
+      'base_url = "https://gateway.example.invalid/v1"',
+      'env_key = "OPENAI_API_KEY"',
+      '',
+      '[projects."/tmp/x"]',
+      'trust_level = "trusted"',
+      '',
+    ].join('\n'));
+
+    const result = runCli(sandbox, ['apply', '--restore-native', '--yes']);
+    assert.equal(result.status, 0, result.stderr);
+    const restored = fs.readFileSync(configPath, 'utf8');
+    assert.match(restored, /# keep this comment/);
+    assert.match(restored, /theme = "dark"/);
+    assert.match(restored, /\[projects\."\/tmp\/x"\]/);
+    assert.doesNotMatch(restored, /model_provider/);
+    assert.doesNotMatch(restored, /ccc_openai/);
+    assert.doesNotMatch(restored, /managed by ccc/);
+  } finally {
+    cleanupSandbox(sandbox);
+  }
+});
+
+test('Codex launch reverts a provider that Codex persisted into native config', () => {
+  const sandbox = makeSandbox();
+  try {
+    createProfiles(sandbox);
+    const configPath = path.join(sandbox.codexHome, 'config.toml');
+    fs.writeFileSync(configPath, '# keep me\ntheme = "dark"\n\n[projects."/tmp/x"]\ntrust_level = "trusted"\n');
+    const result = runCli(sandbox, ['cx'], { env: { CCC_FAKE_PERSIST_PROVIDER: '1' } });
+    assert.equal(result.status, 0, result.stderr);
+    const restored = fs.readFileSync(configPath, 'utf8');
+    assert.match(restored, /# keep me/);
+    assert.match(restored, /theme = "dark"/);
+    assert.match(restored, /\[projects\."\/tmp\/x"\]/);
+    assert.doesNotMatch(restored, /model_provider/);
+    assert.doesNotMatch(restored, /ccc_openai/);
+  } finally {
+    cleanupSandbox(sandbox);
+  }
+});
+
+test('doctor fails when native Codex is pinned to ccc_openai without the env key', () => {
+  const sandbox = makeSandbox();
+  try {
+    createProfiles(sandbox);
+    fs.writeFileSync(path.join(sandbox.codexHome, 'config.toml'), [
+      'model_provider = "ccc_openai"',
+      '[model_providers.ccc_openai]',
+      'env_key = "OPENAI_API_KEY"',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(sandbox.codexHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: { access_token: 'tok', refresh_token: 'ref' },
+    }));
+    const result = runCli(sandbox, ['doctor', '--json'], { env: { OPENAI_API_KEY: '' } });
+    assert.equal(result.status, 1);
+    const report = JSON.parse(result.stdout);
+    const check = report.checks.find((item) => item.label === 'Native Codex provider');
+    assert.equal(check.status, 'fail');
+    assert.match(check.detail, /restore-native/);
+    assert.match(check.detail, /ChatGPT/);
+  } finally {
+    cleanupSandbox(sandbox);
+  }
+});
+
+test('doctor warns when ChatGPT login is ignored because OPENAI_API_KEY is in the environment', () => {
+  const sandbox = makeSandbox();
+  try {
+    createProfiles(sandbox);
+    fs.writeFileSync(path.join(sandbox.codexHome, 'config.toml'), [
+      'model_provider = "ccc_openai"',
+      '[model_providers.ccc_openai]',
+      'env_key = "OPENAI_API_KEY"',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(sandbox.codexHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: { access_token: 'tok', refresh_token: 'ref' },
+    }));
+    const result = runCli(sandbox, ['doctor', '--json'], { env: { OPENAI_API_KEY: 'sk-env' } });
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    const check = report.checks.find((item) => item.label === 'Native Codex provider');
+    assert.equal(check.status, 'warn');
+    assert.match(check.detail, /ChatGPT login is ignored/);
+  } finally {
+    cleanupSandbox(sandbox);
+  }
+});
+
+test('stripCccCodexProvider and leak revert keep unrelated TOML intact', () => {
+  const original = [
+    '# keep me',
+    'model = "gpt-6-astra"',
+    'model_provider = "ccc_openai"',
+    '',
+    '[model_providers.ccc_openai]',
+    'env_key = "OPENAI_API_KEY"',
+    '',
+    '[projects."/tmp/x"]',
+    'trust_level = "trusted"',
+    '',
+  ].join('\n');
+  const stripped = stripCccCodexProvider(original);
+  assert.equal(stripped.changed, true);
+  assert.match(stripped.next, /# keep me/);
+  assert.match(stripped.next, /\[projects\."\/tmp\/x"\]/);
+  assert.doesNotMatch(stripped.next, /ccc_openai|model_provider/);
+
+  const unpinned = stripCccCodexProvider('\ntheme = "dark"\n');
+  assert.equal(unpinned.changed, false);
+  assert.equal(unpinned.next, '\ntheme = "dark"\n');
+
+  const leaked = revertLeakedCccCodexProvider(original, { modelProvider: undefined, hasCccProvider: false });
+  assert.equal(leaked.changed, true);
+  assert.doesNotMatch(leaked.next, /ccc_openai|model_provider/);
+
+  const applied = revertLeakedCccCodexProvider(original, {
+    modelProvider: 'ccc_openai',
+    hasCccProvider: true,
+    cccProvider: { env_key: 'OPENAI_API_KEY' },
+  });
+  assert.equal(applied.changed, false);
+
+  const mutated = [
+    'model_provider = "ccc_openai"',
+    '[model_providers.ccc_openai]',
+    'name = "CCC OpenAI Compatible"',
+    'base_url = "https://gateway.example.invalid/v1"',
+    'env_key = "CCC_OPENAI_API_KEY"',
+    'requires_openai_auth = false',
+    '',
+  ].join('\n');
+  const restored = revertLeakedCccCodexProvider(mutated, {
+    modelProvider: 'ccc_openai',
+    hasCccProvider: true,
+    cccProvider: {
+      name: 'CCC OpenAI Compatible',
+      base_url: 'https://gateway.example.invalid/v1',
+      wire_api: 'responses',
+      requires_openai_auth: true,
+    },
+  });
+  assert.equal(restored.changed, true);
+  const restoredProvider = parseToml(restored.next).model_providers.ccc_openai;
+  assert.equal(restoredProvider.env_key, undefined);
+  assert.equal(restoredProvider.requires_openai_auth, true);
+  assert.equal(restoredProvider.wire_api, 'responses');
 });
 
 test('apply automatically restores earlier files when a later write fails', () => {

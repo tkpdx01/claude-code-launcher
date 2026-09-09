@@ -83,6 +83,7 @@ Claude aliases include `fable`, `sonnet`, `sonnet5`, and `opus`. An explicit CLI
 | `ccc apply [profile] --dry-run` | Preview native config changes |
 | `ccc apply [profile] --yes` | Back up and atomically apply changes |
 | `ccc apply --rollback --yes` | Restore the latest apply backup |
+| `ccc apply --restore-native` | Unpin native Codex from the CCC provider so ChatGPT login works |
 | `ccc doctor [--json]` | Check binaries, storage, and configuration |
 | `ccc delete [profile]` | Delete managed credentials |
 
@@ -113,6 +114,7 @@ New profiles use a versioned format:
 - Writes use a temporary file, `fsync`, and atomic rename.
 - Invalid native JSON/TOML stops `apply`; it is never silently replaced.
 - Codex launches and `doctor` reject a `model_catalog_json` that is missing, invalid, or does not contain the selected model. `ccc apply <profile> --yes` removes only an incompatible catalog so the current Codex bundled metadata is used.
+- Native `codex` uses ChatGPT login unless you explicitly `ccc apply` a Codex profile. If `codex` says `OPENAI_API_KEY` is missing while ChatGPT login still works, `config.toml` is pinned to `ccc_openai`. Run `ccc apply --restore-native`, then use `ccc <profile>` for gateways.
 - Legacy Claude and Codex profiles remain readable. Editing a legacy Codex profile migrates its managed credentials while preserving sessions and databases.
 - `skipWebFetchPreflight: true` is applied only to custom Claude endpoints, unless explicitly overridden.
 

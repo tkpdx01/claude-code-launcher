@@ -120,6 +120,7 @@ const strings = {
     'help.cmd.edit': 'Edit credentials',
     'help.cmd.show': 'View details',
     'help.cmd.apply': 'Write to main config (for native launch)',
+    'help.cmd.restore_native': 'Unpin native Codex so ChatGPT login works',
     'help.cmd.delete': 'Remove profile',
 
     // Lang
@@ -226,6 +227,7 @@ const strings = {
     'help.cmd.edit': '编辑凭证',
     'help.cmd.show': '查看详情',
     'help.cmd.apply': '写入主配置（原生启动可用）',
+    'help.cmd.restore_native': '取消原生 Codex 的 CCC provider，恢复 ChatGPT 登录',
     'help.cmd.delete': '删除 profile',
 
     'lang.switched': '语言已切换为中文',

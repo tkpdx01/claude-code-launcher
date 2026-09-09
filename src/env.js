@@ -1,5 +1,7 @@
 // Environment variable management for child processes
 
+import { CCC_OPENAI_API_KEY_ENV } from './store.js';
+
 const MODEL_OVERRIDE_PATTERNS = [
   /^ANTHROPIC_DEFAULT_[A-Z0-9_]+_MODEL$/,
   /^ANTHROPIC_MODEL$/,
@@ -52,8 +54,11 @@ export function buildCodexEnv(apiKey) {
   // OPENAI_BASE_URL is deprecated; endpoint is in config.toml
   delete env.OPENAI_BASE_URL;
   if (apiKey) {
+    env[CCC_OPENAI_API_KEY_ENV] = apiKey;
+    // Leftover native configs may still name env_key = OPENAI_API_KEY.
     env.OPENAI_API_KEY = apiKey;
   } else {
+    delete env[CCC_OPENAI_API_KEY_ENV];
     delete env.OPENAI_API_KEY;
   }
   return env;

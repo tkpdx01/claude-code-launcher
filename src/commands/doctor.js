@@ -12,6 +12,7 @@ import {
   describeCodexModelCatalog,
   inspectNativeCodexModelCatalog,
 } from '../codex-catalog.js';
+import { inspectNativeCodexProviderAuth } from '../codex-native.js';
 
 function executableVersion(command) {
   const result = crossSpawn.sync(command, ['--version'], {
@@ -52,6 +53,12 @@ export async function doctorCommand(args) {
   }
 
   store.ensureDirs();
+  const nativeAuth = inspectNativeCodexProviderAuth();
+  checks.push({
+    status: nativeAuth.status,
+    label: 'Native Codex provider',
+    detail: nativeAuth.detail,
+  });
   const rootMode = fileMode(CONFIG_DIR);
   checks.push({
     status: process.platform === 'win32' || rootMode === 0o700 ? 'ok' : 'fail',

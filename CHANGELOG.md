@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.2 - 2026-09-09
+
+### Fixes
+
+- Stop native `codex` from reporting a missing `OPENAI_API_KEY` after ChatGPT login. CCC was leaving `model_provider = "ccc_openai"` with `env_key = "OPENAI_API_KEY"` in `~/.codex/config.toml`, which ignores ChatGPT tokens in `auth.json`.
+- Launch now injects `CCC_OPENAI_API_KEY` and `requires_openai_auth = false`, then surgically reverts a leaked native `ccc_openai` default so invocation-scoped `-c` overrides cannot stick.
+- `ccc apply` persists custom providers with `requires_openai_auth` so native `codex` reads `auth.json` instead of a process environment variable.
+- `ccc doctor` detects a CCC provider that blocks ChatGPT login. `ccc apply --restore-native` removes that default and keeps the rest of `config.toml`.
+
 ## 2.2.1 - 2026-08-04
 
 ### Fixes
