@@ -81,6 +81,7 @@ function applyCodex(name) {
 
   if (profile.configToml && profile.configToml.trim()) {
     fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), fixCodexAnalyticsScope(profile.configToml));
+    store.copyCodexProfileSupportFiles(name, CODEX_HOME_PATH);
   }
 
   status('success', t('apply.done_codex', { name }), t('apply.hint', { cmd: 'codex' }));

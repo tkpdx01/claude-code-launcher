@@ -319,8 +319,36 @@ command = "demo-server"
   assert.match(root, /^model = "test-model"$/m);
   assert.match(root, /^model_provider = "ccc_openai"$/m);
   assert.match(toml, /\[mcp_servers.demo\]\ncommand = "demo-server"/);
-  assert.deepEqual(captured(f).args, ['--full-auto', 'exec', 'test prompt']);
+  assert.deepEqual(captured(f).args, ['--dangerously-bypass-approvals-and-sandbox', 'exec', 'test prompt']);
   assert.equal(captured(f).key, 'test-key');
   assert.equal(f.run([cliPath, 'demo']).status, 0);
   assert.equal(fs.readFileSync(target, 'utf8'), toml, 'migration must be idempotent');
+});
+
+test('Codex profile edits combine upstream preservation with analytics repair and string escaping', (t) => {
+  const f = fixture(t);
+  f.write('.ccc/codex-profiles/demo/auth.json', { OPENAI_API_KEY: 'old-key' });
+  f.write('.ccc/codex-profiles/demo/config.toml', [
+    '# Codex profile managed by ccc', 'model_reasoning_effort = "high"',
+    '[analytics]', 'enabled = false', 'model = "old-model"', 'model_provider = "ccc_openai"',
+    '[model_providers.ccc_openai]', 'base_url = "https://old.example.test/v1"',
+    '[mcp_servers.demo]', 'command = "demo-server"', '',
+  ].join('\n'));
+  const model = 'custom"model\\id';
+  const result = f.run(['--input-type=module', '-e', `
+    import * as store from './src/store.js';
+    import { readTomlString } from './src/codex-config.js';
+    store.updateCodexProfile('demo', 'new-key', 'https://new.example.test/v1', ${JSON.stringify(model)});
+    const profile = store.readCodexProfile('demo');
+    console.log(JSON.stringify({ ...profile, model: readTomlString(profile.configToml, 'model') }));
+  `]);
+  assert.equal(result.status, 0, result.stderr);
+  const profile = JSON.parse(result.stdout);
+  assert.equal(profile.model, model);
+  assert.equal(profile.auth.OPENAI_API_KEY, 'new-key');
+  assert.equal((profile.configToml.match(/^model =/gm) || []).length, 1);
+  assert.match(profile.configToml.split(/^\s*\[/m)[0], /^model_provider = "ccc_openai"$/m);
+  assert.match(profile.configToml, /^model_reasoning_effort = "high"$/m);
+  assert.match(profile.configToml, /\[mcp_servers.demo\]\ncommand = "demo-server"/);
+  assert.match(profile.configToml, /^base_url = "https:\/\/new.example.test\/v1"$/m);
 });

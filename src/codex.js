@@ -10,6 +10,8 @@ import { spawnCli, superviseCli } from './spawn.js';
 import { fixCodexAnalyticsScope } from './codex-config.js';
 import { status } from './ui.js';
 
+const CODEX_UNSANDBOXED_FLAG = '--dangerously-bypass-approvals-and-sandbox';
+
 // Codex v0.120+ forbids overriding reserved provider names (openai, ollama, lmstudio).
 // Auto-fix old profiles that used [model_providers.openai].
 function fixReservedProviderName(codexHome) {
@@ -72,6 +74,9 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false, ext
     fs.mkdirSync(codexHome, { recursive: true });
   }
 
+  // Preserve the upstream cleanup of obsolete sandbox config.
+  store.sanitizeCodexProfileConfig(profileName);
+
   // Recover profiles generated with model/provider inside [analytics].
   const configPath = path.join(codexHome, 'config.toml');
   if (fs.existsSync(configPath)) {
@@ -87,7 +92,7 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false, ext
   const env = buildCodexEnv(codexHome, apiKey);
 
   const args = [];
-  if (dangerouslySkipPermissions) args.push('--full-auto');
+  if (dangerouslySkipPermissions) args.push(CODEX_UNSANDBOXED_FLAG);
   args.push(...extraArgs);
 
   status('launch', t('launch.codex', { name: profileName }), t('launch.cmd_codex', { home: codexHome, args: args.join(' ') }));

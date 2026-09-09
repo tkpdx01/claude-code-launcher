@@ -10,7 +10,7 @@ npm i -g @tkpdx01/ccc
 ccc new          # create a profile
 ccc list         # list all
 ccc 3            # launch #3
-ccc -d           # launch with --dangerously-skip-permissions / --full-auto
+ccc -d           # Claude: --dangerously-skip-permissions; Codex: --dangerously-bypass-approvals-and-sandbox
 ccc api -p "Explain this project"  # forward arguments to Claude
 ccc api -- --help                # show the child CLI's help
 ```
