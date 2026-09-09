@@ -2,6 +2,10 @@
 
 > Zero-dependency profile switcher for **Claude Code** & **OpenAI Codex**.
 
+![CCC terminal preview with provider badges, a highlighted menu, and keyboard shortcuts](docs/images/cli-preview.png)
+
+*Terminal preview with demo profiles.*
+
 ```bash
 npm i -g @tkpdx01/ccc
 ```
