@@ -23,6 +23,7 @@ function runNode(args, options = {}) {
     env,
     encoding: 'utf8',
     input: options.input,
+    timeout: 10000,
   });
 }
 

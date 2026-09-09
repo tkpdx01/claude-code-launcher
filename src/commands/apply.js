@@ -1,12 +1,13 @@
+import { profileChoice, status } from '../ui.js';
 import fs from 'fs';
 import path from 'path';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { CLAUDE_SETTINGS_PATH, CODEX_HOME_PATH } from '../config.js';
-import { applyClaudeDefaults } from '../claude-settings.js';
-import { isModelOverrideKey } from '../env.js';
+import { readClaudeSettings, mergeClaudeSettings } from '../claude-settings.js';
+import { fixCodexAnalyticsScope } from '../codex-config.js';
 import { select, confirm } from '../prompt.js';
-import { green, gray, red, yellow, blue, magenta } from '../color.js';
+import { red, yellow } from '../color.js';
 
 export async function applyCommand(args) {
   const all = store.getAllProfiles();
@@ -18,10 +19,7 @@ export async function applyCommand(args) {
   let profileInfo;
 
   if (!args[0]) {
-    const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : magenta('[Claude]');
-      return { name: `${tag} ${p.name}`, value: p };
-    });
+    const choices = all.map((p, i) => profileChoice(p, i));
     profileInfo = await select(t('pick.apply'), choices);
   } else {
     profileInfo = store.resolveProfile(args[0]);
@@ -52,56 +50,16 @@ function applyClaude(name) {
     process.exit(1);
   }
 
-  let settings = {};
-  if (fs.existsSync(CLAUDE_SETTINGS_PATH)) {
-    try {
-      settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8'));
-    } catch { /* start fresh */ }
+  if (!profile.apiKey) {
+    throw new Error(t('common.apikey_required'));
   }
-
-  settings.env = settings.env || {};
-  if (profile.apiKey) settings.env.ANTHROPIC_AUTH_TOKEN = profile.apiKey;
-  if (profile.apiUrl) settings.env.ANTHROPIC_BASE_URL = profile.apiUrl;
-
-  settings.env.DISABLE_TELEMETRY = '1';
-  settings.env.DISABLE_ERROR_REPORTING = '1';
-  settings.env.DISABLE_AUTOUPDATER = '1';
-  settings.env.DISABLE_BUG_COMMAND = '1';
-
-  if (profile.env && typeof profile.env === 'object') {
-    for (const [key, value] of Object.entries(profile.env)) {
-      settings.env[key] = value;
-    }
-  }
-
-  const profileEnvKeys = new Set(Object.keys(profile.env || {}));
-  for (const key of Object.keys(settings.env)) {
-    if (isModelOverrideKey(key) && !profileEnvKeys.has(key)) {
-      delete settings.env[key];
-    }
-  }
-
-  if (!profile.settings?.model) {
-    delete settings.model;
-  } else {
-    settings.model = profile.settings.model;
-  }
-
-  if (profile.settings && typeof profile.settings === 'object') {
-    for (const [key, value] of Object.entries(profile.settings)) {
-      settings[key] = value;
-    }
-  }
-
-  applyClaudeDefaults(settings);
-  settings.hasCompletedOnboarding = true;
+  const settings = mergeClaudeSettings(readClaudeSettings(), profile, { clearModelOverrides: false });
 
   const dir = path.dirname(CLAUDE_SETTINGS_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n');
 
-  console.log(green(t('apply.done_claude', { name })));
-  console.log(gray(`  ${t('apply.hint', { cmd: 'claude' })}`));
+  status('success', t('apply.done_claude', { name }), t('apply.hint', { cmd: 'claude' }));
 }
 
 function applyCodex(name) {
@@ -122,9 +80,8 @@ function applyCodex(name) {
   );
 
   if (profile.configToml && profile.configToml.trim()) {
-    fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), profile.configToml);
+    fs.writeFileSync(path.join(CODEX_HOME_PATH, 'config.toml'), fixCodexAnalyticsScope(profile.configToml));
   }
 
-  console.log(green(t('apply.done_codex', { name })));
-  console.log(gray(`  ${t('apply.hint', { cmd: 'codex' })}`));
+  status('success', t('apply.done_codex', { name }), t('apply.hint', { cmd: 'codex' }));
 }

@@ -8,6 +8,15 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 const strings = {
   en: {
+    'ui.workspace': 'Your AI workspace',
+    'ui.actions': 'What would you like to do?',
+    'ui.keys': '↑/↓ or j/k move  ·  enter select  ·  q quit',
+    'ui.keys_short': '↑↓ move · enter select · q quit',
+    'ui.profiles': 'Profiles',
+    'ui.profile': 'Profile',
+    'ui.type': 'Provider',
+    'ui.endpoint': 'Endpoint',
+    'ui.count': '{count} available',
     // Main menu
     'menu.header': '{count} profiles · ccc <name> to quick launch',
     'menu.empty': 'No profiles yet. Let\'s create one.',
@@ -47,6 +56,7 @@ const strings = {
     'common.profile_name': 'Profile name:',
     'common.profile_type': 'Profile type:',
     'common.apikey_required': 'API key cannot be empty',
+    'common.settings_invalid': 'Cannot read valid settings from {path}; fix the file and retry',
 
     // List
     'list.footer': '{count} profiles, launch: ccc <name> or ccc <number>',
@@ -109,6 +119,7 @@ const strings = {
     'help.quick.name': 'Launch by name',
     'help.quick.number': 'Launch by index',
     'help.quick.ddd': '--dangerously-skip-permissions / --full-auto',
+    'help.quick.args': 'Pass arguments to claude/codex unchanged',
     'help.commands': 'Commands:',
     'help.cmd.list': 'List all profiles',
     'help.cmd.new': 'Create profile',
@@ -122,6 +133,15 @@ const strings = {
   },
 
   zh: {
+    'ui.workspace': '你的 AI 工作台',
+    'ui.actions': '准备做什么？',
+    'ui.keys': '↑/↓ 或 j/k 移动  ·  enter 选择  ·  q 退出',
+    'ui.keys_short': '↑↓ 移动 · enter 选择 · q 退出',
+    'ui.profiles': '配置库',
+    'ui.profile': '配置',
+    'ui.type': '服务商',
+    'ui.endpoint': 'API 地址',
+    'ui.count': '{count} 个可用配置',
     'menu.header': '{count} 个 profile · ccc <name> 快速启动',
     'menu.empty': '还没有 profile，开始创建一个吧',
     'menu.launch': '启动',
@@ -158,6 +178,7 @@ const strings = {
     'common.profile_name': 'Profile 名称:',
     'common.profile_type': 'Profile 类型:',
     'common.apikey_required': 'API 密钥不能为空',
+    'common.settings_invalid': '无法从 {path} 读取有效配置，请修复文件后重试',
 
     'list.footer': '{count} 个 profile，启动: ccc <name> 或 ccc <number>',
 
@@ -211,6 +232,7 @@ const strings = {
     'help.quick.name': '按名称启动',
     'help.quick.number': '按序号启动',
     'help.quick.ddd': '--dangerously-skip-permissions / --full-auto',
+    'help.quick.args': '将参数原样传递给 claude/codex',
     'help.commands': '命令:',
     'help.cmd.list': '列出所有 profile',
     'help.cmd.new': '创建 profile',

@@ -1,25 +1,37 @@
 import { t } from '../i18n.js';
-import { cyan, yellow, gray, dim, bold } from '../color.js';
+import { cyan, gray, bold } from '../color.js';
+import { panel, section, columns, clip, pad } from '../ui.js';
+
+function commands(rows) {
+  for (const [command, description] of rows) {
+    if (process.stdout.isTTY && columns() < 68) {
+      console.log(`  ${cyan(command)}`);
+      console.log(`    ${clip(gray(description), columns() - 2)}`);
+    } else {
+      console.log(`  ${pad(cyan(command), 29)}${description}`);
+    }
+  }
+}
 
 export function helpCommand() {
-  console.log(bold(cyan('\n  CCC')) + dim(' — Claude Code / Codex Launcher\n'));
-
-  console.log(yellow(`  ${t('help.interactive')}`));
-  console.log(gray('    ccc                    ') + t('help.interactive.ccc'));
-  console.log();
-
-  console.log(yellow(`  ${t('help.quick')}`));
-  console.log(gray('    ccc <profile>          ') + t('help.quick.name'));
-  console.log(gray('    ccc <number>           ') + t('help.quick.number'));
-  console.log(gray('    ccc <profile> -d       ') + t('help.quick.ddd'));
-  console.log();
-
-  console.log(yellow(`  ${t('help.commands')}`));
-  console.log(gray('    ccc list, ls           ') + t('help.cmd.list'));
-  console.log(gray('    ccc new [name]         ') + t('help.cmd.new'));
-  console.log(gray('    ccc edit [profile]     ') + t('help.cmd.edit'));
-  console.log(gray('    ccc show [profile]     ') + t('help.cmd.show'));
-  console.log(gray('    ccc apply [profile]    ') + t('help.cmd.apply'));
-  console.log(gray('    ccc delete [profile]   ') + t('help.cmd.delete'));
+  console.log('\n' + panel([gray('Claude Code · Codex · DeepSeek')], { title: `${cyan('◆')} ${bold('CCC')} / ${t('ui.workspace')}` }));
+  section(t('help.interactive'));
+  commands([['ccc', t('help.interactive.ccc')]]);
+  section(t('help.quick'));
+  commands([
+    ['ccc <profile>', t('help.quick.name')],
+    ['ccc <number>', t('help.quick.number')],
+    ['ccc <profile> -d', t('help.quick.ddd')],
+    ['ccc <profile> -- <args>', t('help.quick.args')],
+  ]);
+  section(t('help.commands'));
+  commands([
+    ['ccc list, ls', t('help.cmd.list')],
+    ['ccc new [name]', t('help.cmd.new')],
+    ['ccc edit [profile]', t('help.cmd.edit')],
+    ['ccc show [profile]', t('help.cmd.show')],
+    ['ccc apply [profile]', t('help.cmd.apply')],
+    ['ccc delete [profile]', t('help.cmd.delete')],
+  ]);
   console.log();
 }

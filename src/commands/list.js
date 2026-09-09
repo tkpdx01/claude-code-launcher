@@ -1,6 +1,7 @@
 import * as store from '../store.js';
 import { t } from '../i18n.js';
-import { cyan, gray, blue, magenta, yellow, green } from '../color.js';
+import { gray, yellow, bold } from '../color.js';
+import { section, typeTag, pad, clip, columns, width, hint } from '../ui.js';
 
 export function listCommand() {
   const all = store.getAllProfiles();
@@ -22,24 +23,28 @@ export function listCommand() {
     return { num, name: p.name, url, rawType: p.type };
   });
 
-  const w0 = Math.max(1, ...rows.map((r) => r.num.length));
-  const w1 = 8;
-  const w2 = Math.max(7, ...rows.map((r) => r.name.length));
-
-  console.log();
-  console.log(
-    `  ${cyan('#'.padEnd(w0))}  ${cyan('Type'.padEnd(w1))}  ${cyan('Profile'.padEnd(w2))}  ${cyan('API URL')}`,
-  );
-  console.log(`  ${'─'.repeat(w0)}  ${'─'.repeat(w1)}  ${'─'.repeat(w2)}  ${'─'.repeat(30)}`);
-
-  for (const r of rows) {
-    const num = gray(r.num.padEnd(w0));
-    let type;
-    if (r.rawType === 'codex') type = blue('Codex'.padEnd(w1));
-    else if (r.rawType === 'deepseek') type = green('DeepSeek'.padEnd(w1));
-    else type = magenta('Claude'.padEnd(w1));
-    console.log(`  ${num}  ${type}  ${r.name.padEnd(w2)}  ${r.url}`);
+  section(t('ui.profiles'), t('ui.count', { count: all.length }));
+  const size = columns();
+  const compact = process.stdout.isTTY && size < 60;
+  const w0 = Math.max(2, ...rows.map((r) => r.num.length));
+  const wName = Math.min(24, Math.max(12, ...rows.map((r) => width(r.name))));
+  if (!compact) {
+    console.log(`  ${gray(`${pad('#', w0)}  ${pad(t('ui.profile'), wName)}  ${pad(t('ui.type'), 10)}  ${t('ui.endpoint')}`)}`);
+    console.log();
   }
 
-  console.log(gray(`\n  ${t('list.footer', { count: all.length })}\n`));
+  for (const r of rows) {
+    const num = gray(r.num.padStart(w0, '0'));
+    if (compact) {
+      console.log(`  ${clip(`${num}  ${bold(r.name)}  ${typeTag(r.rawType)}`, size)}`);
+      console.log(`      ${clip(gray(r.url), size - 4)}\n`);
+    } else {
+      // Keep full names and URLs when piping the list into another command.
+      const name = process.stdout.isTTY ? pad(bold(r.name), wName) : bold(r.name.padEnd(wName));
+      const line = `${num}  ${name}  ${pad(typeTag(r.rawType), 10)}  ${gray(r.url)}`;
+      console.log(`  ${process.stdout.isTTY ? clip(line, size) : line}`);
+    }
+  }
+
+  hint(t('list.footer', { count: all.length }));
 }

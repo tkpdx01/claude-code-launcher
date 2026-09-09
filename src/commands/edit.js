@@ -1,9 +1,10 @@
+import { profileChoice, typeTag, status } from '../ui.js';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { input, select } from '../prompt.js';
 import { promptCodexModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
-import { cyan, green, gray, red, yellow, blue, magenta } from '../color.js';
+import { cyan, gray, red, yellow } from '../color.js';
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
 const DEEPSEEK_MODELS = [
@@ -22,10 +23,7 @@ export async function editCommand(args) {
   let profileInfo;
 
   if (!args[0]) {
-    const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : p.type === 'deepseek' ? cyan('[DeepSeek]') : magenta('[Claude]');
-      return { name: `${tag} ${p.name}`, value: p };
-    });
+    const choices = all.map((p, i) => profileChoice(p, i));
     profileInfo = await select(t('pick.edit'), choices);
   } else {
     profileInfo = store.resolveProfile(args[0]);
@@ -38,7 +36,7 @@ export async function editCommand(args) {
   if (profileInfo.type === 'codex') {
     const { apiKey: curKey, baseUrl: curUrl, model: curModel } = store.getCodexCredentials(profileInfo.name);
 
-    console.log(cyan(`\n${t('edit.current', { name: profileInfo.name, tag: blue('[Codex]') })}:`));
+    console.log(cyan(`\n${t('edit.current', { name: profileInfo.name, tag: typeTag('codex') })}:`));
     console.log(gray(`  Base URL: ${curUrl || t('common.not_set')}`));
     console.log(gray(`  OPENAI_API_KEY: ${curKey ? curKey.substring(0, 10) + '...' : t('common.not_set')}`));
     console.log(gray(`  Model: ${curModel || t('common.default')}`));
@@ -66,17 +64,17 @@ export async function editCommand(args) {
       }
       store.createCodexProfile(newName, apiKey, baseUrl, model);
       store.deleteCodexProfile(profileInfo.name);
-      console.log(green(`\n${t('edit.renamed', { name: newName })}`));
+      status('success', t('edit.renamed', { name: newName }));
     } else {
       store.createCodexProfile(profileInfo.name, apiKey, baseUrl, model);
-      console.log(green(`\n${t('edit.updated', { name: profileInfo.name })}`));
+      status('success', t('edit.updated', { name: profileInfo.name }));
     }
   } else if (profileInfo.type === 'deepseek') {
     const existing = store.readClaudeProfile(profileInfo.name) || {};
     const { apiKey: curKey } = store.getClaudeCredentials(profileInfo.name);
     const curModel = existing.model || '';
 
-    console.log(cyan(`\n${t('edit.current', { name: profileInfo.name, tag: cyan('[DeepSeek]') })}:`));
+    console.log(cyan(`\n${t('edit.current', { name: profileInfo.name, tag: typeTag('deepseek') })}:`));
     console.log(gray(`  API Key: ${curKey ? curKey.substring(0, 10) + '...' : t('common.not_set')}`));
     console.log(gray(`  Model: ${curModel || t('common.default')}`));
     console.log();
@@ -112,16 +110,16 @@ export async function editCommand(args) {
       }
       store.saveClaudeProfile(newName, updated);
       store.deleteClaudeProfile(profileInfo.name);
-      console.log(green(`\n${t('edit.renamed', { name: newName })}`));
+      status('success', t('edit.renamed', { name: newName }));
     } else {
       store.saveClaudeProfile(profileInfo.name, updated);
-      console.log(green(`\n${t('edit.updated', { name: profileInfo.name })}`));
+      status('success', t('edit.updated', { name: profileInfo.name }));
     }
   } else {
     const existing = store.readClaudeProfile(profileInfo.name) || {};
     const { apiKey: curKey, apiUrl: curUrl } = store.getClaudeCredentials(profileInfo.name);
 
-    console.log(cyan(`\n${t('edit.current', { name: profileInfo.name, tag: magenta('[Claude]') })}:`));
+    console.log(cyan(`\n${t('edit.current', { name: profileInfo.name, tag: typeTag('claude') })}:`));
     console.log(gray(`  ANTHROPIC_BASE_URL: ${curUrl || t('common.not_set')}`));
     console.log(gray(`  ANTHROPIC_AUTH_TOKEN: ${curKey ? curKey.substring(0, 10) + '...' : t('common.not_set')}`));
     console.log();
@@ -149,10 +147,10 @@ export async function editCommand(args) {
       }
       store.saveClaudeProfile(newName, updated);
       store.deleteClaudeProfile(profileInfo.name);
-      console.log(green(`\n${t('edit.renamed', { name: newName })}`));
+      status('success', t('edit.renamed', { name: newName }));
     } else {
       store.saveClaudeProfile(profileInfo.name, updated);
-      console.log(green(`\n${t('edit.updated', { name: profileInfo.name })}`));
+      status('success', t('edit.updated', { name: profileInfo.name }));
     }
   }
 }

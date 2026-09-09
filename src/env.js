@@ -11,10 +11,9 @@ export function isModelOverrideKey(key) {
   return MODEL_OVERRIDE_PATTERNS.some((p) => p.test(key));
 }
 
-// Build child process env for Claude launch.
-// Injects profile env, strips model overrides not in profile.
-export function buildClaudeEnv(profile) {
-  const env = { ...process.env };
+// Shared by runtime settings, apply, and the child process environment.
+export function getClaudeProfileEnv(profile) {
+  const env = { ...profile.settings?.env };
 
   // Inject profile-level env vars
   if (profile.apiKey) env.ANTHROPIC_AUTH_TOKEN = profile.apiKey;
@@ -26,21 +25,26 @@ export function buildClaudeEnv(profile) {
   env.DISABLE_AUTOUPDATER = '1';
   env.DISABLE_BUG_COMMAND = '1';
 
-  // Inject any extra env from profile
-  const profileEnvKeys = new Set();
-  if (profile.env && typeof profile.env === 'object') {
-    for (const [key, value] of Object.entries(profile.env)) {
-      env[key] = value;
-      profileEnvKeys.add(key);
-    }
+  if (profile.type === 'deepseek' && profile.model && env.ANTHROPIC_MODEL === undefined) {
+    env.ANTHROPIC_MODEL = profile.model;
   }
+
+  // Inject any extra env from profile
+  return { ...env, ...profile.env };
+}
+
+// Build child process env for Claude launch.
+// Injects profile env, strips model overrides not in profile.
+export function buildClaudeEnv(profile) {
+  const profileEnv = getClaudeProfileEnv(profile);
+  const env = { ...process.env, ...profileEnv };
 
   // Override model env vars with empty string (not delete!) so process env
   // takes priority over ~/.claude/settings.json user setting source.
   // Deleting would let Claude Code fall back to user settings which contain
   // model overrides specific to the main endpoint.
   for (const key of Object.keys(env)) {
-    if (isModelOverrideKey(key) && !profileEnvKeys.has(key)) {
+    if (isModelOverrideKey(key) && !Object.prototype.hasOwnProperty.call(profileEnv, key)) {
       env[key] = '';
     }
   }

@@ -1,9 +1,10 @@
+import { typeTag, status } from '../ui.js';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { input, confirm, select } from '../prompt.js';
 import { promptCodexModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
-import { green, red, yellow, blue, magenta, cyan } from '../color.js';
+import { red, yellow } from '../color.js';
 import { launchClaude } from '../claude.js';
 import { launchCodex } from '../codex.js';
 
@@ -18,9 +19,9 @@ export async function newCommand(args) {
   let replacedProfile = null;
 
   const profileType = await select(t('common.profile_type'), [
-    { name: `${magenta('[Claude]')} Claude Code`, value: 'claude' },
-    { name: `${blue('[Codex]')}  OpenAI Codex`, value: 'codex' },
-    { name: `${cyan('[DeepSeek]')} DeepSeek`, value: 'deepseek' },
+    { name: typeTag('claude') + ' Code', value: 'claude' },
+    { name: typeTag('codex'), value: 'codex' },
+    { name: typeTag('deepseek'), value: 'deepseek' },
   ]);
 
   if (!name) {
@@ -57,7 +58,7 @@ export async function newCommand(args) {
     store.ensureDirs();
     store.createCodexProfile(name, apiKey, baseUrl, model);
     if (replacedProfile?.type === 'claude' || replacedProfile?.type === 'deepseek') store.deleteClaudeProfile(replacedProfile.name);
-    console.log(green(`\n${t('new.created_codex', { name })}`));
+    status('success', t('new.created_codex', { name }));
 
     if (await confirm(t('new.launch_codex'), false)) {
       launchCodex(name);
@@ -73,8 +74,7 @@ export async function newCommand(args) {
     store.ensureDirs();
     store.saveClaudeProfile(name, { apiUrl: DEEPSEEK_BASE_URL, apiKey, model, type: 'deepseek' });
     if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
-    if (replacedProfile?.type === 'claude') store.deleteClaudeProfile(replacedProfile.name);
-    console.log(green(`\n${t('new.created_deepseek', { name })}`));
+    status('success', t('new.created_deepseek', { name }));
 
     if (await confirm(t('new.launch_deepseek'), false)) {
       launchClaude(name);
@@ -90,8 +90,7 @@ export async function newCommand(args) {
     store.ensureDirs();
     store.saveClaudeProfile(name, { apiUrl, apiKey });
     if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
-    if (replacedProfile?.type === 'deepseek') store.deleteClaudeProfile(replacedProfile.name);
-    console.log(green(`\n${t('new.created_claude', { name })}`));
+    status('success', t('new.created_claude', { name }));
 
     if (await confirm(t('new.launch_claude'), false)) {
       launchClaude(name);

@@ -1,7 +1,8 @@
+import { profileChoice, status } from '../ui.js';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { confirm, select } from '../prompt.js';
-import { green, red, yellow, blue, magenta, cyan } from '../color.js';
+import { red, yellow } from '../color.js';
 
 export async function deleteCommand(args) {
   const all = store.getAllProfiles();
@@ -13,10 +14,7 @@ export async function deleteCommand(args) {
   let profileInfo;
 
   if (!args[0]) {
-    const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : p.type === 'deepseek' ? cyan('[DeepSeek]') : magenta('[Claude]');
-      return { name: `${tag} ${p.name}`, value: p };
-    });
+    const choices = all.map((p, i) => profileChoice(p, i));
     profileInfo = await select(t('pick.delete'), choices);
   } else {
     profileInfo = store.resolveProfile(args[0]);
@@ -39,5 +37,5 @@ export async function deleteCommand(args) {
     store.deleteClaudeProfile(profileInfo.name); // deepseek also stored in profiles/
   }
 
-  console.log(green(t('delete.done', { type: typeLabel, name: profileInfo.name })));
+  status('success', t('delete.done', { type: typeLabel, name: profileInfo.name }));
 }

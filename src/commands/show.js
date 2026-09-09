@@ -1,11 +1,12 @@
+import { profileChoice, panel, typeTag, pad, section } from '../ui.js';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { select } from '../prompt.js';
-import { cyan, gray, red, yellow, white, blue, magenta, green, bold } from '../color.js';
+import { cyan, gray, red, yellow, white, bold } from '../color.js';
 
 function maskKey(key) {
   if (!key) return t('common.not_set');
-  return key.substring(0, 15) + '...';
+  return key.length > 12 ? key.slice(0, 4) + '…' + key.slice(-4) : '••••••••';
 }
 
 export async function showCommand(args) {
@@ -18,10 +19,7 @@ export async function showCommand(args) {
   let profileInfo;
 
   if (!args[0]) {
-    const choices = all.map((p) => {
-      const tag = p.type === 'codex' ? blue('[Codex]') : p.type === 'deepseek' ? green('[DeepSeek]') : magenta('[Claude]');
-      return { name: `${tag} ${p.name}`, value: p };
-    });
+    const choices = all.map((p, i) => profileChoice(p, i));
     profileInfo = await select(t('pick.show'), choices);
   } else {
     profileInfo = store.resolveProfile(args[0]);
@@ -31,59 +29,34 @@ export async function showCommand(args) {
     }
   }
 
-  if (profileInfo.type === 'codex') {
-    const { apiKey, baseUrl, model } = store.getCodexCredentials(profileInfo.name);
-    const profile = store.readCodexProfile(profileInfo.name);
+  const isCodex = profileInfo.type === 'codex';
+  const profile = isCodex ? store.readCodexProfile(profileInfo.name) : store.readClaudeProfile(profileInfo.name);
+  const credentials = isCodex ? store.getCodexCredentials(profileInfo.name) : store.getClaudeCredentials(profileInfo.name);
+  console.log('\n' + panel([typeTag(profileInfo.type)], { title: `${bold(profileInfo.name)}` }));
+  console.log();
 
-    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${blue('[Codex]')}`);
-    console.log(gray(`  Path: ${store.getCodexProfileDir(profileInfo.name)}\n`));
-    console.log(`  ${cyan('OPENAI_API_KEY')}: ${yellow(maskKey(apiKey))}`);
-    console.log(`  ${cyan('Base URL')}: ${white(baseUrl)}`);
-    console.log(`  ${cyan('Model')}: ${white(model || t('common.default'))}`);
+  const fields = [
+    [t('ui.endpoint'), credentials.baseUrl || credentials.apiUrl || t('common.not_set')],
+    ['API Key', yellow(maskKey(credentials.apiKey))],
+    ['Model', credentials.model || profile?.model || profile?.settings?.model || t('common.default')],
+  ];
+  if (isCodex) fields.push(['CODEX_HOME', store.getCodexProfileDir(profileInfo.name)]);
+  for (const [label, value] of fields) console.log(`  ${pad(gray(label), 15)} ${white(value)}`);
 
-    if (profile?.configToml) {
-      console.log(`\n  ${cyan('config.toml')}:`);
-      for (const line of profile.configToml.split('\n')) {
-        console.log(`    ${gray(line)}`);
-      }
-    }
-  } else if (profileInfo.type === 'deepseek') {
-    const profile = store.readClaudeProfile(profileInfo.name);
-    const { apiKey, apiUrl } = store.getClaudeCredentials(profileInfo.name);
-
-    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${green('[DeepSeek]')}`);
-    console.log();
-    console.log(`  ${cyan('API URL')}: ${white(apiUrl || t('common.not_set'))}`);
-    console.log(`  ${cyan('API Key')}: ${yellow(maskKey(apiKey))}`);
-    console.log(`  ${cyan('Model')}: ${white(profile?.model || t('common.default'))}`);
-
-    if (profile?.env && Object.keys(profile.env).length > 0) {
-      console.log(`\n  ${cyan(t('show.extra_env'))}:`);
-      for (const [k, v] of Object.entries(profile.env)) {
-        console.log(`    ${gray(k)}: ${gray(v)}`);
-      }
-    }
-  } else {
-    const { apiKey, apiUrl } = store.getClaudeCredentials(profileInfo.name);
-    const profile = store.readClaudeProfile(profileInfo.name);
-
-    console.log(`\n  ${bold(cyan(`Profile: ${profileInfo.name}`))} ${magenta('[Claude]')}`);
-    console.log();
-    console.log(`  ${cyan('ANTHROPIC_BASE_URL')}: ${white(apiUrl || t('common.not_set'))}`);
-    console.log(`  ${cyan('ANTHROPIC_AUTH_TOKEN')}: ${yellow(maskKey(apiKey))}`);
-
-    if (profile?.env && Object.keys(profile.env).length > 0) {
-      console.log(`\n  ${cyan(t('show.extra_env'))}:`);
-      for (const [k, v] of Object.entries(profile.env)) {
-        console.log(`    ${gray(k)}: ${gray(v)}`);
-      }
-    }
-
-    if (profile?.settings && Object.keys(profile.settings).length > 0) {
-      console.log(`\n  ${cyan(t('show.settings_overrides'))}:`);
-      console.log(`    ${gray(JSON.stringify(profile.settings, null, 2).split('\n').join('\n    '))}`);
+  if (isCodex && profile?.configToml) {
+    section('config.toml');
+    for (const line of profile.configToml.split('\n')) console.log(`  ${gray(line)}`);
+  }
+  if (profile?.env && Object.keys(profile.env).length > 0) {
+    section(t('show.extra_env'));
+    for (const [key, value] of Object.entries(profile.env)) {
+      const display = /(?:key|token|secret|password)/i.test(key) ? maskKey(String(value)) : value;
+      console.log(`  ${cyan(key)}  ${gray(display)}`);
     }
   }
-
+  if (profile?.settings && Object.keys(profile.settings).length > 0) {
+    section(t('show.settings_overrides'));
+    console.log(JSON.stringify(profile.settings, null, 2).split('\n').map((line) => `  ${gray(line)}`).join('\n'));
+  }
   console.log();
 }

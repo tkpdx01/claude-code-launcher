@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { tomlString, readTomlString } from './codex-config.js';
 import {
   CONFIG_DIR,
   PROFILES_DIR,
@@ -31,7 +32,7 @@ function getClaudeNames() {
   return fs
     .readdirSync(PROFILES_DIR)
     .filter((f) => f.endsWith('.json'))
-    .map((f) => f.replace('.json', ''))
+    .map((f) => f.slice(0, -5))
     .sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
 }
 
@@ -164,10 +165,8 @@ export function getCodexCredentials(name) {
   let baseUrl = '';
   let model = '';
   if (profile.configToml) {
-    const bm = profile.configToml.match(/base_url\s*=\s*"([^"]+)"/);
-    if (bm) baseUrl = bm[1];
-    const mm = profile.configToml.match(/^model\s*=\s*"([^"]+)"/m);
-    if (mm) model = mm[1];
+    baseUrl = readTomlString(profile.configToml, 'base_url');
+    model = readTomlString(profile.configToml, 'model');
   }
   return { apiKey, baseUrl: baseUrl || OPENAI_DEFAULT_BASE_URL, model };
 }
@@ -183,16 +182,17 @@ function isCustomOpenAIBaseUrl(baseUrl) {
 
 export function generateCodexConfigToml(baseUrl, model) {
   const lines = ['# Codex profile managed by ccc'];
-  lines.push('[analytics]');
-  lines.push('enabled = false');
   const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
-  if (model) lines.push(`model = "${model}"`);
+  if (model) lines.push(`model = ${tomlString(model)}`);
   if (isCustomOpenAIBaseUrl(normalized)) {
     lines.push(`model_provider = "${CCC_OPENAI_COMPAT_PROVIDER}"`);
+  }
+  lines.push('', '[analytics]', 'enabled = false');
+  if (isCustomOpenAIBaseUrl(normalized)) {
     lines.push('');
     lines.push(`[model_providers.${CCC_OPENAI_COMPAT_PROVIDER}]`);
     lines.push('name = "OpenAI Compatible"');
-    lines.push(`base_url = "${normalized}"`);
+    lines.push(`base_url = ${tomlString(normalized)}`);
     lines.push('env_key = "OPENAI_API_KEY"');
     lines.push('wire_api = "responses"');
   }
@@ -225,8 +225,8 @@ export function resolveProfile(input) {
   const byName = all.find((p) => p.name === input);
   if (byName) return byName;
   // Try as numeric index (1-based)
-  const num = parseInt(input, 10);
-  if (!isNaN(num) && num >= 1 && num <= all.length) {
+  const num = /^\d+$/.test(input) ? Number(input) : NaN;
+  if (Number.isSafeInteger(num) && num >= 1 && num <= all.length) {
     return all[num - 1];
   }
   return null;

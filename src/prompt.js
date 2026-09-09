@@ -2,7 +2,9 @@
 // Uses Node built-in readline + raw mode for arrow-key selection
 
 import readline from 'readline';
-import { cyan, green, gray, dim } from './color.js';
+import { cyan, green, gray, dim, bold, inverse } from './color.js';
+import { clip, pad, width, plain, columns } from './ui.js';
+import { t } from './i18n.js';
 
 let nonTtyLinesPromise;
 let nonTtyLineIndex = 0;
@@ -34,7 +36,7 @@ async function readNonTtyAnswer(defaultValue = '') {
 export function input(message, defaultValue = '') {
   if (!process.stdin.isTTY) {
     const suffix = defaultValue ? ` ${dim(`(${defaultValue})`)}` : '';
-    process.stdout.write(`${cyan('?')} ${message}${suffix} `);
+    process.stdout.write(`  ${cyan('◆')} ${bold(message)}${suffix} `);
     return readNonTtyAnswer(defaultValue).then((answer) => {
       process.stdout.write('\n');
       return answer;
@@ -44,7 +46,7 @@ export function input(message, defaultValue = '') {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const suffix = defaultValue ? ` ${dim(`(${defaultValue})`)}` : '';
-    rl.question(`${cyan('?')} ${message}${suffix} `, (answer) => {
+    rl.question(`  ${cyan('◆')} ${bold(message)}${suffix} `, (answer) => {
       resolve(answer.trim() || defaultValue);
       rl.close();
     });
@@ -116,7 +118,7 @@ export function password(message) {
 export function confirm(message, defaultValue = false) {
   if (!process.stdin.isTTY) {
     const hint = defaultValue ? 'Y/n' : 'y/N';
-    process.stdout.write(`${cyan('?')} ${message} ${dim(`(${hint})`)} `);
+    process.stdout.write(`  ${cyan('◆')} ${bold(message)} ${dim(`(${hint})`)} `);
     return readNonTtyAnswer('').then((answer) => {
       process.stdout.write('\n');
       const a = answer.trim().toLowerCase();
@@ -128,7 +130,7 @@ export function confirm(message, defaultValue = false) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const hint = defaultValue ? 'Y/n' : 'y/N';
-    rl.question(`${cyan('?')} ${message} ${dim(`(${hint})`)} `, (answer) => {
+    rl.question(`  ${cyan('◆')} ${bold(message)} ${dim(`(${hint})`)} `, (answer) => {
       const a = answer.trim().toLowerCase();
       if (a === '') resolve(defaultValue);
       else resolve(a === 'y' || a === 'yes');
@@ -138,131 +140,138 @@ export function confirm(message, defaultValue = false) {
   });
 }
 
-// --- List selection (arrow keys) ---
-// Supports separator items: { separator: true, name: '──' }
-// Cursor skips separators automatically.
+// --- List selection (arrow keys, j/k, Home/End, Page Up/Down) ---
+// Descriptions collapse into a focused hint in narrow terminals.
 export function select(message, choices, defaultIndex = 0) {
   return new Promise((resolve) => {
-    if (choices.length === 0) {
+    const selectableIndices = choices.map((choice, i) => choice.separator ? -1 : i).filter((i) => i >= 0);
+    if (selectableIndices.length === 0) {
       resolve(undefined);
       return;
     }
+    let cursorPos = Number.isInteger(defaultIndex)
+      ? Math.max(0, Math.min(defaultIndex, selectableIndices.length - 1)) : 0;
+    const getCursor = () => selectableIndices[cursorPos];
 
-    // Non-TTY: auto-select default selectable item
-    if (!process.stdin.isTTY) {
-      const selectable = choices.filter((c) => !c.separator);
-      const idx = defaultIndex >= 0 && defaultIndex < selectable.length ? defaultIndex : 0;
-      resolve(selectable[idx]?.value);
+    // Preserve piped-answer behavior without cursor controls in redirected output.
+    if (!process.stdin.isTTY || !process.stdout.isTTY || process.env.TERM === 'dumb') {
+      if (!Number.isInteger(defaultIndex) || defaultIndex < 0 || defaultIndex >= selectableIndices.length) cursorPos = 0;
+      resolve(choices[getCursor()].value);
       return;
     }
 
     const stdout = process.stdout;
-
-    // Map selectable indices
-    const selectableIndices = choices.map((c, i) => (c.separator ? -1 : i)).filter((i) => i >= 0);
-    let cursorPos = Math.max(0, Math.min(defaultIndex, selectableIndices.length - 1));
-    const getCursor = () => selectableIndices[cursorPos];
-
-    const maxVisible = Math.min(choices.length, Math.max(8, (stdout.rows || 24) - 4));
-
-    function getWindowStart() {
-      const cursor = getCursor();
-      let start = cursor - Math.floor(maxVisible / 2);
-      start = Math.max(0, start);
-      start = Math.min(choices.length - maxVisible, start);
-      return Math.max(0, start);
-    }
+    let renderedLines = [];
+    let done = false;
+    const maxVisible = () => Math.min(choices.length, Math.max(1, Math.min(12, (stdout.rows || 24) - 10)));
 
     function render() {
-      const windowStart = getWindowStart();
-      const windowEnd = Math.min(windowStart + maxVisible, choices.length);
-      const lines = [];
+      const size = columns();
+      const rowSize = size - 2;
+      const showDescriptions = size >= 54;
+      const labelWidth = Math.min(26, Math.max(16, ...choices.filter((c) => !c.separator).map((c) => width(c.name)))) + 2;
       const cursor = getCursor();
+      const visible = maxVisible();
+      const start = Math.max(0, Math.min(choices.length - visible, cursor - Math.floor(visible / 2)));
+      const end = Math.min(start + visible, choices.length);
+      const position = `${String(cursorPos + 1).padStart(2, '0')} / ${String(selectableIndices.length).padStart(2, '0')}`;
+      const title = message || t('ui.actions');
+      const titleSpace = size - width(position) - 5;
+      const heading = titleSpace > 4
+        ? `${pad(bold(title), titleSpace)} ${gray(position)}` : clip(bold(title), size - 3);
+      const lines = [`  ${cyan('╭─')} ${heading}`];
 
-      if (message) lines.push(`${cyan('?')} ${message}`);
-
-      for (let i = windowStart; i < windowEnd; i++) {
+      for (let i = start; i < end; i++) {
         const choice = choices[i];
         if (choice.separator) {
-          lines.push(`    ${dim(choice.name || '─'.repeat(30))}`);
-        } else if (i === cursor) {
-          lines.push(`  ${cyan('›')} ${choice.name}`);
+          lines.push(`  ${gray('│')} ${clip(dim(choice.name || ''), rowSize)}`);
+          continue;
+        }
+        let label = choice.name;
+        if (showDescriptions && choice.description) {
+          label = pad(label, labelWidth) + dim(choice.description);
+        }
+        if (i === cursor) {
+          lines.push(`  ${cyan('│')}${inverse(cyan(pad(' › ' + plain(label), rowSize + 1)))}`);
         } else {
-          lines.push(`    ${choice.name}`);
+          lines.push(`  ${gray('│')}   ${clip(label, rowSize - 2)}`);
         }
       }
 
-      if (choices.length > maxVisible) {
-        if (windowStart > 0 && windowEnd < choices.length) {
-          lines.push(gray(`  ↑ ${windowStart} more · ↓ ${choices.length - windowEnd} more`));
-        } else if (windowStart > 0) {
-          lines.push(gray(`  ↑ ${windowStart} more`));
-        } else if (windowEnd < choices.length) {
-          lines.push(gray(`  ↓ ${choices.length - windowEnd} more`));
-        }
-      }
-
+      const detail = !showDescriptions && choices[cursor].description;
+      if (detail) lines.push(`  ${gray('│')}   ${clip(dim(detail), rowSize - 2)}`);
+      const help = size < 44 ? t('ui.keys_short') : t('ui.keys');
+      lines.push(`  ${cyan('╰─')} ${clip(gray(help), size - 3)}`);
       return lines;
     }
 
-    let renderedLineCount = 0;
+    function erase() {
+      // A terminal may reflow old rows after a resize; clear their physical
+      // height at the new width, not just the previous logical row count.
+      const terminalColumns = stdout.columns || 80;
+      const rows = renderedLines.reduce((sum, line) => sum + Math.max(1, Math.ceil(width(line) / terminalColumns)), 0);
+      if (rows > 0) stdout.write(`\x1b[${rows}A\r\x1b[0J`);
+    }
 
     function draw() {
-      if (renderedLineCount > 0) {
-        stdout.write(`\x1b[${renderedLineCount}A`);
-        stdout.write('\x1b[0J');
-      }
+      erase();
       const lines = render();
-      renderedLineCount = lines.length;
+      renderedLines = lines;
       stdout.write(lines.join('\n') + '\n');
     }
 
     const wasRaw = process.stdin.isRaw;
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-
-    draw();
+    const restoreCursor = () => stdout.write('\x1b[?25h');
+    const terminate = () => { cleanup(); process.exit(143); };
+    const hangup = () => { cleanup(); process.exit(129); };
 
     function cleanup() {
+      if (done) return;
+      done = true;
       process.stdin.setRawMode(wasRaw || false);
-      process.stdin.removeListener('data', onKeypress);
+      process.stdin.removeListener('keypress', onKeypress);
       process.stdin.pause();
+      stdout.removeListener('resize', draw);
+      process.removeListener('exit', restoreCursor);
+      process.removeListener('SIGTERM', terminate);
+      process.removeListener('SIGHUP', hangup);
+      restoreCursor();
     }
 
-    function onKeypress(data) {
-      const key = data.toString();
-
-      if (key === '\x1b[A' || key === 'k') {
-        if (cursorPos > 0) { cursorPos--; draw(); }
-        return;
-      }
-
-      if (key === '\x1b[B' || key === 'j') {
-        if (cursorPos < selectableIndices.length - 1) { cursorPos++; draw(); }
-        return;
-      }
-
-      if (key === '\r' || key === '\n') {
+    function onKeypress(str, key = {}) {
+      if (done) return;
+      let next = cursorPos;
+      if (key.name === 'up' || str === 'k') next--;
+      else if (key.name === 'down' || str === 'j') next++;
+      else if (key.name === 'home') next = 0;
+      else if (key.name === 'end') next = selectableIndices.length - 1;
+      else if (key.name === 'pageup') next -= maxVisible();
+      else if (key.name === 'pagedown') next += maxVisible();
+      else if (key.name === 'return' || key.name === 'enter') {
         const choice = choices[getCursor()];
+        erase();
         cleanup();
-        if (renderedLineCount > 0) {
-          stdout.write(`\x1b[${renderedLineCount}A`);
-          stdout.write('\x1b[0J');
-        }
-        if (message) {
-          stdout.write(`${cyan('?')} ${message} ${green(choice.name)}\n`);
-        }
+        stdout.write(`  ${green('✓')} ${clip(`${message ? message + '  ' : ''}${bold(plain(choice.name))}`, columns() - 2)}\n`);
         resolve(choice.value);
         return;
-      }
-
-      if (key === '\x03' || key === 'q') {
+      } else if ((key.ctrl && key.name === 'c') || key.name === 'escape' || str === 'q') {
         cleanup();
         stdout.write('\n');
         process.exit(0);
       }
+      next = Math.max(0, Math.min(next, selectableIndices.length - 1));
+      if (next !== cursorPos) { cursorPos = next; draw(); }
     }
 
-    process.stdin.on('data', onKeypress);
+    readline.emitKeypressEvents(process.stdin);
+    process.stdin.on('keypress', onKeypress);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    stdout.on('resize', draw);
+    process.once('exit', restoreCursor);
+    process.once('SIGTERM', terminate);
+    process.once('SIGHUP', hangup);
+    stdout.write('\x1b[?25l');
+    draw();
   });
 }

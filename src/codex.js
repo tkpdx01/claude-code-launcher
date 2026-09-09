@@ -4,9 +4,11 @@ import fs from 'fs';
 import path from 'path';
 import * as store from './store.js';
 import { buildCodexEnv } from './env.js';
-import { green, gray, red, yellow } from './color.js';
+import { red, yellow } from './color.js';
 import { t } from './i18n.js';
-import { spawnCli } from './spawn.js';
+import { spawnCli, superviseCli } from './spawn.js';
+import { fixCodexAnalyticsScope } from './codex-config.js';
+import { status } from './ui.js';
 
 // Codex v0.120+ forbids overriding reserved provider names (openai, ollama, lmstudio).
 // Auto-fix old profiles that used [model_providers.openai].
@@ -57,7 +59,7 @@ function fixReservedProviderName(codexHome) {
   console.log(yellow(t('launch.fix_provider')));
 }
 
-export function launchCodex(profileName, dangerouslySkipPermissions = false) {
+export function launchCodex(profileName, dangerouslySkipPermissions = false, extraArgs = []) {
   const codexHome = store.getCodexProfileDir(profileName);
 
   if (!store.codexProfileExists(profileName)) {
@@ -70,6 +72,14 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
     fs.mkdirSync(codexHome, { recursive: true });
   }
 
+  // Recover profiles generated with model/provider inside [analytics].
+  const configPath = path.join(codexHome, 'config.toml');
+  if (fs.existsSync(configPath)) {
+    const original = fs.readFileSync(configPath, 'utf8');
+    const corrected = fixCodexAnalyticsScope(original);
+    if (corrected !== original) fs.writeFileSync(configPath, corrected);
+  }
+
   // Auto-fix reserved provider names from old profiles
   fixReservedProviderName(codexHome);
 
@@ -78,21 +88,16 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false) {
 
   const args = [];
   if (dangerouslySkipPermissions) args.push('--full-auto');
+  args.push(...extraArgs);
 
-  console.log(green(t('launch.codex', { name: profileName })));
-  console.log(gray(t('launch.cmd_codex', { home: codexHome, args: args.join(' ') })));
+  status('launch', t('launch.codex', { name: profileName }), t('launch.cmd_codex', { home: codexHome, args: args.join(' ') }));
 
   const child = spawnCli('codex', args, {
     stdio: 'inherit',
     env,
   });
 
-  child.on('close', (code) => process.exit(code ?? 0));
-  child.on('error', (err) => {
-    console.log(red(t('launch.failed', { msg: err.message })));
-    process.exit(1);
+  superviseCli(child, {
+    onError: (err) => console.log(red(t('launch.failed', { msg: err.message }))),
   });
-  for (const sig of ['SIGTERM', 'SIGHUP']) {
-    process.on(sig, () => child.kill(sig));
-  }
 }
