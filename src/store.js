@@ -24,8 +24,19 @@ function claudePath(name) {
   return path.join(PROFILES_DIR, `${name}.json`);
 }
 
+function readProfileJson(name) {
+  const p = claudePath(name);
+  if (!fs.existsSync(p)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    return raw && typeof raw === 'object' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
 export function claudeProfileExists(name) {
-  return fs.existsSync(claudePath(name));
+  return readClaudeProfile(name) != null;
 }
 
 function getClaudeNames() {
@@ -34,6 +45,7 @@ function getClaudeNames() {
     .readdirSync(PROFILES_DIR)
     .filter((f) => f.endsWith('.json'))
     .map((f) => f.slice(0, -5))
+    .filter((name) => readClaudeProfile(name) != null)
     .sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
 }
 
@@ -42,8 +54,9 @@ function getClaudeNames() {
 // Does NOT write to disk — callers decide whether to persist.
 function parseClaudeProfile(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  // New format: has "type" field
+  if (raw.type === 'codex') return null;
   if (raw.type === 'claude' || raw.type === 'deepseek') return raw;
+  if (raw.type) return null;
   // Old format: full settings.json copy with env.ANTHROPIC_AUTH_TOKEN
   if (raw.env?.ANTHROPIC_AUTH_TOKEN) {
     const { env = {}, ...restSettings } = raw;
@@ -66,15 +79,18 @@ function parseClaudeProfile(raw) {
   return null;
 }
 
+function parseJsonCodexProfile(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.type === 'codex') return raw;
+  return null;
+}
+
+function readJsonCodexProfile(name) {
+  return parseJsonCodexProfile(readProfileJson(name));
+}
+
 export function readClaudeProfile(name) {
-  const p = claudePath(name);
-  if (!fs.existsSync(p)) return null;
-  try {
-    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return parseClaudeProfile(raw);
-  } catch {
-    return null;
-  }
+  return parseClaudeProfile(readProfileJson(name));
 }
 
 // Check if a profile is still in old (full settings.json) format on disk
@@ -120,21 +136,40 @@ function codexDir(name) {
   return path.join(CODEX_PROFILES_DIR, name);
 }
 
-export function codexProfileExists(name) {
+function codexDirExists(name) {
   return fs.existsSync(path.join(codexDir(name), 'auth.json'));
+}
+
+export function codexProfileExists(name) {
+  return codexDirExists(name) || readJsonCodexProfile(name) != null;
 }
 
 function getCodexNames() {
   ensureDirs();
-  if (!fs.existsSync(CODEX_PROFILES_DIR)) return [];
-  return fs
-    .readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && fs.existsSync(path.join(CODEX_PROFILES_DIR, d.name, 'auth.json')))
-    .map((d) => d.name)
-    .sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
+  const names = new Set();
+  if (fs.existsSync(CODEX_PROFILES_DIR)) {
+    for (const entry of fs.readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })) {
+      if (entry.isDirectory() && codexDirExists(entry.name)) names.add(entry.name);
+    }
+  }
+  for (const file of fs.readdirSync(PROFILES_DIR)) {
+    if (!file.endsWith('.json')) continue;
+    const name = file.slice(0, -5);
+    if (readJsonCodexProfile(name)) names.add(name);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
+}
+
+export function materializeJsonCodexProfile(name) {
+  if (codexDirExists(name)) return false;
+  const slim = readJsonCodexProfile(name);
+  if (!slim?.apiKey) return false;
+  createCodexProfile(name, slim.apiKey, slim.apiUrl || OPENAI_DEFAULT_BASE_URL, slim.model || '');
+  return true;
 }
 
 export function readCodexProfile(name) {
+  materializeJsonCodexProfile(name);
   const dir = codexDir(name);
   const authPath = path.join(dir, 'auth.json');
   const configPath = path.join(dir, 'config.toml');
@@ -156,24 +191,37 @@ export function saveCodexProfile(name, auth, configToml) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify(auth, null, 2) + '\n');
   fs.writeFileSync(path.join(dir, 'config.toml'), sanitizeCodexConfigToml(configToml));
+  if (readJsonCodexProfile(name)) fs.unlinkSync(claudePath(name));
 }
 
 export function deleteCodexProfile(name) {
   const dir = codexDir(name);
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+  if (readJsonCodexProfile(name)) fs.unlinkSync(claudePath(name));
 }
 
 export function getCodexCredentials(name) {
-  const profile = readCodexProfile(name);
-  if (!profile) return { apiKey: '', baseUrl: '', model: '' };
-  const apiKey = profile.auth?.OPENAI_API_KEY || '';
-  let baseUrl = '';
-  let model = '';
-  if (profile.configToml) {
-    baseUrl = readTomlString(profile.configToml, 'base_url');
-    model = readTomlString(profile.configToml, 'model');
+  if (codexDirExists(name)) {
+    const profile = readCodexProfile(name);
+    if (!profile) return { apiKey: '', baseUrl: '', model: '' };
+    const apiKey = profile.auth?.OPENAI_API_KEY || '';
+    let baseUrl = '';
+    let model = '';
+    if (profile.configToml) {
+      baseUrl = readTomlString(profile.configToml, 'base_url');
+      model = readTomlString(profile.configToml, 'model');
+    }
+    return { apiKey, baseUrl: baseUrl || OPENAI_DEFAULT_BASE_URL, model };
   }
-  return { apiKey, baseUrl: baseUrl || OPENAI_DEFAULT_BASE_URL, model };
+  const slim = readJsonCodexProfile(name);
+  if (slim) {
+    return {
+      apiKey: slim.apiKey || '',
+      baseUrl: slim.apiUrl || OPENAI_DEFAULT_BASE_URL,
+      model: slim.model || '',
+    };
+  }
+  return { apiKey: '', baseUrl: '', model: '' };
 }
 
 function normalizeBaseUrl(baseUrl) {
@@ -442,9 +490,9 @@ export function resolveProfile(input) {
 }
 
 export function anyProfileExists(name) {
-  if (claudeProfileExists(name)) {
-    const profile = readClaudeProfile(name);
-    const type = profile?.type === 'deepseek' ? 'deepseek' : 'claude';
+  const claude = readClaudeProfile(name);
+  if (claude) {
+    const type = claude.type === 'deepseek' ? 'deepseek' : 'claude';
     return { exists: true, type };
   }
   if (codexProfileExists(name)) return { exists: true, type: 'codex' };

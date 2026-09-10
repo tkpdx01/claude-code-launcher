@@ -53,6 +53,14 @@ not depend on Anthropic's domain preflight service when using custom or
 restricted endpoints. An explicit `false` in the global settings or profile
 settings overrides this default.
 
+AnyRouter endpoints (`anyrouter.top` and the same host behind a reverse
+proxy) require Claude Code's 1M context header. Creating or editing a
+Claude profile with an AnyRouter URL writes that configuration
+automatically: `claude-fable-5-1[1m]`, `context-1m-2025-08-07`, and the
+flags that would otherwise block experimental betas. Existing AnyRouter
+profiles pick up the same overlay at launch and apply without being
+rewritten.
+
 Existing full `settings.json` profiles and slim profiles remain supported.
 Older ccc-generated Codex profiles with model/provider keys inside
 `[analytics]` are repaired on launch or when applied. Other tables are kept.
@@ -84,6 +92,8 @@ child CLI.
 ├── tmp/               # Per-launch merged settings (ephemeral)
 └── config.json        # Launcher preferences (language)
 ```
+
+Older Codex profiles stored as `~/.ccc/profiles/<name>.json` with `type: "codex"` are still listed and launched as Codex, not Claude. Launching one materializes it into `codex-profiles/`.
 
 ## License
 

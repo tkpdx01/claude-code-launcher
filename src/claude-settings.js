@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import { CLAUDE_SETTINGS_PATH } from './config.js';
+import { applyAnyRouterSettings } from './anyrouter.js';
 import { getClaudeProfileEnv, isModelOverrideKey } from './env.js';
 import { t } from './i18n.js';
 
@@ -45,7 +46,7 @@ export function mergeClaudeSettings(main, profile, { clearModelOverrides = true 
   }
   if (!profile.settings?.model) delete settings.model;
   settings.hasCompletedOnboarding = true;
-  return applyClaudeDefaults(settings);
+  return applyClaudeDefaults(applyAnyRouterSettings(profile.apiUrl, settings));
 }
 
 export function applyClaudeDefaults(settings) {

@@ -62,6 +62,63 @@ test('legacy Claude profiles keep top-level settings during parsing', () => {
   }
 });
 
+test('slim JSON Codex profiles are not parsed as Claude', () => {
+  const home = makeTempHome();
+  try {
+    const profilesDir = path.join(home, '.ccc', 'profiles');
+    fs.mkdirSync(profilesDir, { recursive: true });
+    fs.writeFileSync(path.join(profilesDir, 'krill.json'), JSON.stringify({
+      provider: 'openai',
+      wireApi: 'responses',
+      schemaVersion: 2,
+      type: 'codex',
+      apiKey: 'codex-key',
+      apiUrl: 'https://api.krill-ai.com/codex/v1',
+      model: 'gpt-5.6-sol',
+    }, null, 2));
+    fs.writeFileSync(path.join(profilesDir, 'plain.json'), JSON.stringify({
+      apiUrl: 'https://api.anthropic.com',
+      apiKey: 'claude-key',
+    }, null, 2));
+
+    const result = runNode([
+      '--input-type=module',
+      '-e',
+      [
+        "import * as store from './src/store.js';",
+        "const all = store.getAllProfiles();",
+        "console.log(JSON.stringify({",
+        "  all,",
+        "  claude: store.readClaudeProfile('krill'),",
+        "  exists: store.anyProfileExists('krill'),",
+        "  claudeExists: store.claudeProfileExists('krill'),",
+        "  creds: store.getCodexCredentials('krill'),",
+        "  plain: store.readClaudeProfile('plain'),",
+        "}));",
+      ].join(''),
+    ], {
+      env: { HOME: home, USERPROFILE: home },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout.trim());
+    assert.equal(payload.claude, null);
+    assert.equal(payload.claudeExists, false);
+    assert.deepEqual(payload.exists, { exists: true, type: 'codex' });
+    assert.equal(payload.creds.apiKey, 'codex-key');
+    assert.equal(payload.creds.baseUrl, 'https://api.krill-ai.com/codex/v1');
+    assert.equal(payload.creds.model, 'gpt-5.6-sol');
+    assert.deepEqual(payload.all, [
+      { name: 'krill', type: 'codex' },
+      { name: 'plain', type: 'claude' },
+    ]);
+    assert.equal(payload.plain.apiKey, 'claude-key');
+    assert.equal(payload.plain.type, 'claude');
+  } finally {
+    cleanupTempHome(home);
+  }
+});
+
 test('non-TTY new command consumes piped answers across multiple prompts', () => {
   const home = makeTempHome();
   try {

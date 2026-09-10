@@ -1,15 +1,9 @@
 // Environment variable management for child processes
 
-const MODEL_OVERRIDE_PATTERNS = [
-  /^ANTHROPIC_DEFAULT_[A-Z0-9_]+_MODEL$/,
-  /^ANTHROPIC_MODEL$/,
-  /^ANTHROPIC_SMALL_FAST_MODEL(?:_[A-Z0-9_]+)?$/,
-  /^CLAUDE_CODE_SUBAGENT_MODEL$/,
-];
+import { applyAnyRouterEnv } from './anyrouter.js';
+import { isModelOverrideKey } from './model-keys.js';
 
-export function isModelOverrideKey(key) {
-  return MODEL_OVERRIDE_PATTERNS.some((p) => p.test(key));
-}
+export { isModelOverrideKey };
 
 // Shared by runtime settings, apply, and the child process environment.
 export function getClaudeProfileEnv(profile) {
@@ -29,8 +23,8 @@ export function getClaudeProfileEnv(profile) {
     env.ANTHROPIC_MODEL = profile.model;
   }
 
-  // Inject any extra env from profile
-  return { ...env, ...profile.env };
+  // Overlay after profile.env so custom headers are kept and the 1M beta can still be appended.
+  return applyAnyRouterEnv(profile.apiUrl, { ...env, ...profile.env });
 }
 
 // Build child process env for Claude launch.

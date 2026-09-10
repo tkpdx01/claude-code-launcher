@@ -361,3 +361,23 @@ test('Codex profile edits combine upstream preservation with analytics repair an
   assert.match(profile.configToml, /\[mcp_servers.demo\]\ncommand = "demo-server"/);
   assert.match(profile.configToml, /^base_url = "https:\/\/new.example.test\/v1"$/m);
 });
+
+test('JSON Codex profiles launch Codex and are not sent to Claude', (t) => {
+  const f = fixture(t);
+  f.fakeCli('claude', captureClaude);
+  f.fakeCli('codex', `
+    require('node:fs').writeFileSync(process.env.CCC_CAPTURE, JSON.stringify({
+      args: process.argv.slice(2), home: process.env.CODEX_HOME, key: process.env.OPENAI_API_KEY,
+    }));
+  `);
+  f.write('.ccc/profiles/krill.json', {
+    type: 'codex', apiKey: 'codex-key', apiUrl: 'https://example.test/v1', model: 'gpt-5.4',
+  });
+  const result = f.run([cliPath, 'krill']);
+  assert.equal(result.status, 0, result.stderr);
+  const launch = captured(f);
+  assert.equal(launch.key, 'codex-key');
+  assert.equal(launch.home, path.join(f.home, '.ccc/codex-profiles/krill'));
+  assert.equal(fs.existsSync(path.join(f.home, '.ccc/profiles/krill.json')), false);
+  assert.equal(fs.existsSync(path.join(f.home, '.ccc/codex-profiles/krill/auth.json')), true);
+});

@@ -1,9 +1,10 @@
-import { profileChoice, typeTag, status } from '../ui.js';
+import { profileChoice, typeTag, status, hint } from '../ui.js';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { input, select } from '../prompt.js';
 import { promptCodexModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
+import { applyAnyRouterProfile, isAnyRouterUrl } from '../anyrouter.js';
 import { cyan, gray, red, yellow } from '../color.js';
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
@@ -135,7 +136,7 @@ export async function editCommand(args) {
     }
     const newName = normalizeProfileName(await input(t('common.profile_name'), profileInfo.name));
 
-    const updated = { ...existing, apiUrl, apiKey };
+    const updated = applyAnyRouterProfile({ ...existing, apiUrl, apiKey });
 
     if (newName && newName !== profileInfo.name) {
       const validation = validateProfileName(newName);
@@ -155,5 +156,6 @@ export async function editCommand(args) {
       store.saveClaudeProfile(profileInfo.name, updated);
       status('success', t('edit.updated', { name: profileInfo.name }));
     }
+    if (isAnyRouterUrl(apiUrl)) hint(t('new.anyrouter_1m'));
   }
 }

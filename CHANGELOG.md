@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.0 - 2026-09-10
+
+### Features
+
+- Detect AnyRouter Claude endpoints and enable 1M context automatically when creating or editing a profile.
+- Overlay the same 1M header, `[1m]` model suffix, and beta flags at launch and apply so existing AnyRouter profiles work without being rewritten.
+
+### Fixes
+
+- Stop treating slim `type: "codex"` JSON files in `~/.ccc/profiles/` as Claude profiles; list, launch, and apply them as Codex.
+- Clear `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` with an empty value (Claude Code treats any non-empty value as enabled) and strip the 1M overlay when a profile is edited off AnyRouter.
+
 ## 2.3.1 - 2026-09-10
 
 ### Fixes

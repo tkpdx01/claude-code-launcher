@@ -1,9 +1,10 @@
-import { typeTag, status } from '../ui.js';
+import { typeTag, status, hint } from '../ui.js';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { input, confirm, select } from '../prompt.js';
 import { promptCodexModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
+import { applyAnyRouterProfile, isAnyRouterUrl } from '../anyrouter.js';
 import { red, yellow } from '../color.js';
 import { launchClaude } from '../claude.js';
 import { launchCodex } from '../codex.js';
@@ -88,9 +89,10 @@ export async function newCommand(args) {
     }
 
     store.ensureDirs();
-    store.saveClaudeProfile(name, { apiUrl, apiKey });
+    store.saveClaudeProfile(name, applyAnyRouterProfile({ apiUrl, apiKey }, { setDefaultModel: true }));
     if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
     status('success', t('new.created_claude', { name }));
+    if (isAnyRouterUrl(apiUrl)) hint(t('new.anyrouter_1m'));
 
     if (await confirm(t('new.launch_claude'), false)) {
       launchClaude(name);

@@ -85,6 +85,8 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false, ext
     process.exit(1);
   }
 
+  store.materializeJsonCodexProfile(profileName);
+
   // Codex requires CODEX_HOME to be an existing directory
   if (!fs.existsSync(codexHome)) {
     fs.mkdirSync(codexHome, { recursive: true });
