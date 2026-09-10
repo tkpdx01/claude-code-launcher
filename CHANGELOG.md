@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.1 - 2026-09-10
+
+### Fixes
+
+- Honor `-d` / `--dangerous` full access for Claude (`bypassPermissions`) and Codex (`danger-full-access` plus the YOLO flag).
+- Avoid passing `--ask-for-approval` together with `--dangerously-bypass-approvals-and-sandbox`, which current Codex clap rejects.
+- Restore cooked TTY mode before spawning the child CLI after the interactive menu.
+
 ## 2.3.0 - 2026-09-09
 
 ### Features
