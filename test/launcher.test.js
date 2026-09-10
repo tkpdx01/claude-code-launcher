@@ -139,8 +139,11 @@ test('Claude forwards child arguments verbatim and removes its private temp sett
   assert.deepEqual(launch.args.slice(2), [
     '--dangerously-skip-permissions', ...extra.filter((arg) => arg !== '--'),
   ]);
+  assert.equal(launch.settings.permissions.defaultMode, 'bypassPermissions');
   if (process.platform !== 'win32') assert.equal(launch.mode, 0o600);
   assert.equal(fs.existsSync(launch.settingsPath), false);
+  assert.equal(f.run([cliPath, 'demo', '--dangerous']).status, 0);
+  assert.ok(captured(f).args.includes('--dangerously-skip-permissions'));
 });
 
 test('failed child startup cleans up temporary settings', (t) => {
@@ -319,7 +322,13 @@ command = "demo-server"
   assert.match(root, /^model = "test-model"$/m);
   assert.match(root, /^model_provider = "ccc_openai"$/m);
   assert.match(toml, /\[mcp_servers.demo\]\ncommand = "demo-server"/);
-  assert.deepEqual(captured(f).args, ['--dangerously-bypass-approvals-and-sandbox', 'exec', 'test prompt']);
+  assert.deepEqual(captured(f).args, [
+    '-c', 'sandbox_mode="danger-full-access"',
+    '-c', 'approval_policy="never"',
+    '--dangerously-bypass-approvals-and-sandbox',
+    '--sandbox', 'danger-full-access',
+    'exec', 'test prompt',
+  ]);
   assert.equal(captured(f).key, 'test-key');
   assert.equal(f.run([cliPath, 'demo']).status, 0);
   assert.equal(fs.readFileSync(target, 'utf8'), toml, 'migration must be idempotent');

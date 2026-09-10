@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseArgs } from '../src/args.js';
+import { parseArgs, isDangerous } from '../src/args.js';
+import { buildCodexLaunchArgs } from '../src/codex.js';
 import { mergeClaudeSettings } from '../src/claude-settings.js';
 import { buildClaudeEnv } from '../src/env.js';
 import { fixCodexAnalyticsScope, readTomlString } from '../src/codex-config.js';
 import { generateCodexConfigToml } from '../src/store.js';
 
 test('legacy launcher flag aliases and explicit child argument boundaries are preserved', () => {
-  for (const flag of ['-d', '--ddd', '-h', '--help', '-v', '--version', '-V']) {
+  for (const flag of ['-d', '--ddd', '--dangerous', '-h', '--help', '-v', '--version', '-V']) {
     for (const args of [[flag, 'demo'], ['demo', flag]]) {
       const parsed = parseArgs(args);
       assert.equal(parsed.cmd, 'demo');
@@ -20,6 +21,17 @@ test('legacy launcher flag aliases and explicit child argument boundaries are pr
   assert.deepEqual([...parsed.flags], []);
   assert.deepEqual(parsed.rest, ['-p', '--help', '--', 'file with spaces']);
   assert.equal(parseArgs(['--', '-demo']).cmd, '-demo');
+  assert.equal(isDangerous(parseArgs(['demo', '-d']).flags), true);
+  assert.equal(isDangerous(parseArgs(['--dangerous', 'demo']).flags), true);
+  assert.equal(isDangerous(parseArgs(['demo']).flags), false);
+  assert.deepEqual(buildCodexLaunchArgs(true, ['exec', 'hi']), [
+    '-c', 'sandbox_mode="danger-full-access"',
+    '-c', 'approval_policy="never"',
+    '--dangerously-bypass-approvals-and-sandbox',
+    '--sandbox', 'danger-full-access',
+    'exec', 'hi',
+  ]);
+  assert.deepEqual(buildCodexLaunchArgs(false, ['exec']), ['exec']);
 });
 
 test('settings.env models survive in both settings and the child environment', () => {

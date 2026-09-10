@@ -77,6 +77,13 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false, ex
   }
   merged.includeCoAuthoredBy = false;
 
+  if (dangerouslySkipPermissions) {
+    if (!merged.permissions || typeof merged.permissions !== 'object' || Array.isArray(merged.permissions)) {
+      merged.permissions = {};
+    }
+    merged.permissions.defaultMode = 'bypassPermissions';
+  }
+
   // Write private settings for this launch only.
   const { tmpPath, cleanup } = writeTempSettings(profileName, merged);
 
@@ -88,7 +95,11 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false, ex
   args.push(...extraArgs);
 
   const launchKey = isDeepseek ? 'launch.deepseek' : 'launch.claude';
-  status('launch', t(launchKey, { name: profileName }), t('launch.cmd_claude', { args: args.join(' ') }));
+  const detail = [
+    dangerouslySkipPermissions ? t('launch.full_access') : '',
+    t('launch.cmd_claude', { args: args.join(' ') }),
+  ].filter(Boolean).join('\n    ');
+  status('launch', t(launchKey, { name: profileName }), detail);
 
   try {
     const child = spawnCli('claude', args, { stdio: 'inherit', env: childEnv });

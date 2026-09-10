@@ -44,7 +44,15 @@ function quoteBatchArgument(value) {
   return escape(escape(quoted));
 }
 
+function releaseTerminal() {
+  if (!process.stdin.isTTY) return;
+  try {
+    if (process.stdin.isRaw) process.stdin.setRawMode(false);
+  } catch { /* Child spawn should not fail because the TTY is already restored. */ }
+}
+
 export function spawnCli(command, args, options = {}) {
+  releaseTerminal();
   if (process.platform === 'win32') {
     const executable = resolveWindowsCommand(command, options);
     if (!/\.(cmd|bat)$/i.test(executable)) return spawn(executable, args, options);

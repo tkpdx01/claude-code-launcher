@@ -249,6 +249,10 @@ test('Codex -d launches without sandbox and cleans old profile config', () => {
 
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /--dangerously-bypass-approvals-and-sandbox/);
+    assert.match(result.stdout, /--sandbox danger-full-access/);
+    assert.doesNotMatch(result.stdout, /--ask-for-approval/);
+    assert.match(result.stdout, /sandbox_mode="danger-full-access"/);
+    assert.match(result.stdout, /approval_policy="never"/);
     assert.doesNotMatch(result.stdout, /--full-auto/);
 
     const cleaned = fs.readFileSync(path.join(profileDir, 'config.toml'), 'utf8');

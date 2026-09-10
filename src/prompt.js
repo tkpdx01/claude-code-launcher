@@ -220,7 +220,6 @@ export function select(message, choices, defaultIndex = 0) {
       stdout.write(lines.join('\n') + '\n');
     }
 
-    const wasRaw = process.stdin.isRaw;
     const restoreCursor = () => stdout.write('\x1b[?25h');
     const terminate = () => { cleanup(); process.exit(143); };
     const hangup = () => { cleanup(); process.exit(129); };
@@ -228,7 +227,9 @@ export function select(message, choices, defaultIndex = 0) {
     function cleanup() {
       if (done) return;
       done = true;
-      process.stdin.setRawMode(wasRaw || false);
+      try {
+        process.stdin.setRawMode(false);
+      } catch { /* TTY may already be restored. */ }
       process.stdin.removeListener('keypress', onKeypress);
       process.stdin.pause();
       stdout.removeListener('resize', draw);

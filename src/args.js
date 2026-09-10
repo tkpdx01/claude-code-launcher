@@ -1,4 +1,4 @@
-const launcherFlags = new Set(['-d', '--ddd', '-h', '--help', '-v', '--version', '-V']);
+const launcherFlags = new Set(['-d', '--ddd', '--dangerous', '-h', '--help', '-v', '--version', '-V']);
 
 // Keep legacy launcher flags, and preserve child argument order and quoting.
 // Everything after -- belongs to the child, including flags shared with ccc.
@@ -17,4 +17,8 @@ export function parseArgs(args) {
   }
   const [cmd, ...rest] = positional;
   return { cmd, rest, flags };
+}
+
+export function isDangerous(flags) {
+  return flags.has('-d') || flags.has('--ddd') || flags.has('--dangerous');
 }

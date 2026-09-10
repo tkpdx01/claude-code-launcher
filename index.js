@@ -20,13 +20,13 @@ import { deleteCommand } from './src/commands/delete.js';
 import { showCommand } from './src/commands/show.js';
 import { helpCommand } from './src/commands/help.js';
 import { applyCommand } from './src/commands/apply.js';
-import { parseArgs } from './src/args.js';
+import { parseArgs, isDangerous } from './src/args.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
 
 const { cmd, rest, flags } = parseArgs(process.argv.slice(2));
-const ddd = flags.has('-d') || flags.has('--ddd');
+const ddd = isDangerous(flags);
 
 if (flags.has('-v') || flags.has('--version') || flags.has('-V')) {
   console.log(pkg.version);
