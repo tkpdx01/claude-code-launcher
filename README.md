@@ -20,11 +20,20 @@ ccc api -- --help                # show the child CLI's help
 ```
 
 The interactive UI includes a workspace header, provider badges, highlighted
-menus, and compact layouts for narrow terminals. Use **↑/↓** or **j/k** to
-move, **Enter** to select, **Home/End** or **Page Up/Down** for long lists,
-and **q** or **Esc** to exit. Chinese text and emoji align by terminal cell
-width. Piped output stays free of color codes; `NO_COLOR=1` also disables
-colors in interactive terminals.
+menus, and layouts that adapt to terminal width and height.
+
+- Type to filter actions, profiles, or models instantly by name and description
+  (including provider). Matching ignores case and accepts multiple keywords,
+  such as `codex dev`. The main menu also accepts English action names in Chinese mode.
+- Press **/** to start a search, including names beginning with `j`, `k`, or `q`.
+  **Backspace** deletes a character, **Ctrl+U** clears the query, and **Esc** clears
+  the search and returns to navigation. The menu shows match counts and empty results.
+- Use **↑/↓** and **Enter** to choose, or **Home/End** and **Page Up/Down** for
+  long lists. Outside search, **j/k** also move and **q** or **Esc** exit.
+
+Chinese text and emoji align by terminal cell width, and long search input keeps
+its newest characters visible. Piped output stays free of color codes;
+`NO_COLOR=1` also disables colors in interactive terminals.
 
 ## How It Works
 
@@ -82,6 +91,21 @@ child CLI.
 | `ccc show [profile]` | Show details |
 | `ccc apply [profile]` | Write profile to global config |
 | `ccc delete [profile]` | Delete |
+
+## Development
+
+Requires Node.js 18 or newer and npm. The launcher uses only Node.js built-ins;
+there are no third-party runtime or development dependencies.
+
+```bash
+npm ci
+npm test
+```
+
+Commit `package-lock.json` with any dependency change. `.npmrc` saves new
+dependencies at exact versions, and CI and publishing use `npm ci` to install
+the locked dependency tree and remove leftover packages. The test matrix covers
+Node.js 18, 20, 22, and 24 on Linux, macOS, and Windows.
 
 ## Storage
 

@@ -69,9 +69,9 @@ async function mainMenu() {
     { name: `≡  ${t('menu.list')}`, description: t('menu.list.desc'), value: 'list' },
     { name: `−  ${t('menu.delete')}`, description: t('menu.delete.desc'), value: 'delete' },
     { separator: true, name: '' },
-    { name: `◎  ${t('menu.lang')}`, description: `[${langLabel}]  ${t('menu.lang.desc')}`, value: 'lang' },
+    { name: `◎  ${t('menu.lang')}`, description: `[${langLabel}]  ${t('menu.lang.desc')}`, value: 'lang', searchText: 'language' },
     { name: `×  ${t('menu.exit')}`, value: 'exit' },
-  ]);
+  ].map((choice) => ({ ...choice, searchText: choice.searchText || choice.value })));
 
   switch (action) {
     case 'launch': {

@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 2.5.0 - 2026-09-13
+
+### Features
+
+- Filter every interactive menu as you type, with case-insensitive multi-keyword matching, provider search, result counts, and empty states.
+- Keep navigation shortcuts outside search; use `/` to search, Backspace to delete a Unicode character, Ctrl+U to clear, and Esc to return to the full list.
+- Adapt menu rows to terminal height and keep the latest search input visible in narrow windows.
+
+### Dependencies
+
+- Remove stale local packages, retain zero third-party dependencies, and commit an npm lockfile.
+- Save future dependencies at exact versions and install with `npm ci` in test and publish workflows.
 
 ### Performance
 

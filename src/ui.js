@@ -9,7 +9,7 @@ const simpleText = /^[\x20-\x7e]*$/;
 // Intl.Segmenter takes several milliseconds to construct; most launcher output
 // is plain ASCII and never needs it, so build it on first use.
 let graphemeSegmenter;
-function graphemes(text) {
+export function graphemes(text) {
   graphemeSegmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' });
   return graphemeSegmenter.segment(text);
 }

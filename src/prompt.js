@@ -3,7 +3,7 @@
 
 import readline from 'readline';
 import { cyan, green, gray, dim, bold, inverse } from './color.js';
-import { clip, pad, width, plain, columns } from './ui.js';
+import { clip, pad, width, plain, columns, graphemes } from './ui.js';
 import { t } from './i18n.js';
 
 let nonTtyLinesPromise;
@@ -66,18 +66,46 @@ export async function confirm(message, defaultValue = false) {
   return answer === 'y' || answer === 'yes';
 }
 
-// --- List selection (arrow keys, j/k, Home/End, Page Up/Down) ---
-// Descriptions collapse into a focused hint in narrow terminals.
+function searchText(value) {
+  return plain(value).normalize('NFKC').toLowerCase();
+}
+
+function backspace(value) {
+  let last = 0;
+  for (const { index } of graphemes(value)) last = index;
+  return value.slice(0, last);
+}
+
+// Keep the newest input visible without splitting CJK or emoji characters.
+function queryTail(value, limit) {
+  if (limit <= 0) return '';
+  if (width(value) <= limit) return value;
+  const parts = Array.from(graphemes(value), ({ segment }) => segment);
+  let result = '';
+  let used = 1;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const size = width(parts[i]);
+    if (used + size > limit) break;
+    result = parts[i] + result;
+    used += size;
+  }
+  return '…' + result;
+}
+
+// --- Searchable list selection ---
+// Type to filter, or press / to search for text beginning with j, k, or q.
 export function select(message, choices, defaultIndex = 0) {
   return new Promise((resolve) => {
-    const selectableIndices = choices.map((choice, i) => choice.separator ? -1 : i).filter((i) => i >= 0);
+    const allIndices = choices.map((_, i) => i);
+    const selectableIndices = allIndices.filter((i) => !choices[i].separator);
     if (selectableIndices.length === 0) {
       resolve(undefined);
       return;
     }
     let cursorPos = Number.isInteger(defaultIndex)
       ? Math.max(0, Math.min(defaultIndex, selectableIndices.length - 1)) : 0;
-    const getCursor = () => selectableIndices[cursorPos];
+    let filteredIndices = selectableIndices;
+    const getCursor = () => filteredIndices[cursorPos];
 
     // Preserve piped-answer behavior without cursor controls in redirected output.
     if (!process.stdin.isTTY || !process.stdout.isTTY || process.env.TERM === 'dumb') {
@@ -89,29 +117,68 @@ export function select(message, choices, defaultIndex = 0) {
     const stdout = process.stdout;
     let renderedLines = [];
     let done = false;
-    const maxVisible = () => Math.min(choices.length, Math.max(1, Math.min(12, (stdout.rows || 24) - 10)));
-    // Choices never change while the menu is open, so measure their labels once.
-    const labelWidth = Math.min(26, Math.max(16, ...selectableIndices.map((i) => width(choices[i].name)))) + 2;
+    let drawScheduled = false;
+    let searching = false;
+    let query = '';
+    let displayIndices = allIndices;
+    // Cache searchable labels, descriptions, and optional aliases once per menu.
+    const searchable = new Map(selectableIndices.map((i) => [i, searchText(
+      [choices[i].name, choices[i].description, choices[i].searchText].filter(Boolean).join(' '),
+    )]));
+    const labelWidth = Math.min(26, selectableIndices.reduce((max, i) => Math.max(max, width(choices[i].name)), 16)) + 2;
+
+    function updateQuery(value) {
+      const selected = getCursor();
+      query = value;
+      const words = searchText(query).trim().split(/\s+/u).filter(Boolean);
+      filteredIndices = words.length
+        ? selectableIndices.filter((i) => words.every((word) => searchable.get(i).includes(word)))
+        : selectableIndices;
+      // Hide group separators while filtering, and retain focus when it still matches.
+      displayIndices = words.length ? filteredIndices : allIndices;
+      cursorPos = Math.max(0, filteredIndices.indexOf(selected));
+      scheduleDraw();
+    }
+
+    function layout() {
+      const size = Math.max(1, Math.min(columns() + 2, (stdout.columns || 80) - 1));
+      // Leave a row for the cursor so the menu can always be erased in place.
+      const height = Math.max(1, (stdout.rows || 24) - 1);
+      const showDescriptions = size >= 58;
+      const showDetail = !showDescriptions && !!choices[getCursor()]?.description && height >= 6;
+      const showHeading = height >= 4 || (!searching && height === 2);
+      const showSearch = height >= 3 || (searching && height === 2);
+      const showHelp = height >= 3;
+      const visible = Math.max(1, Math.min(12, height - showHeading - showSearch - showHelp - showDetail));
+      return { size, showDescriptions, showDetail, showHeading, showSearch, showHelp, visible };
+    }
 
     function render() {
-      const size = columns();
-      const rowSize = size - 2;
-      const showDescriptions = size >= 54;
+      const { size, showDescriptions, showDetail, showHeading, showSearch, showHelp, visible } = layout();
       const cursor = getCursor();
-      const visible = maxVisible();
-      const start = Math.max(0, Math.min(choices.length - visible, cursor - Math.floor(visible / 2)));
-      const end = Math.min(start + visible, choices.length);
-      const position = `${String(cursorPos + 1).padStart(2, '0')} / ${String(selectableIndices.length).padStart(2, '0')}`;
+      const displayCursor = Math.max(0, displayIndices.indexOf(cursor));
+      const start = Math.max(0, Math.min(displayIndices.length - visible, displayCursor - Math.floor(visible / 2)));
+      const end = Math.min(start + visible, displayIndices.length);
+      const position = `${String(filteredIndices.length ? cursorPos + 1 : 0).padStart(2, '0')} / ${String(filteredIndices.length).padStart(2, '0')}`;
       const title = message || t('ui.actions');
-      const titleSpace = size - width(position) - 5;
+      const titleSpace = size - width(position) - 6;
       const heading = titleSpace > 4
-        ? `${pad(bold(title), titleSpace)} ${gray(position)}` : clip(bold(title), size - 3);
-      const lines = [`  ${cyan('╭─')} ${heading}`];
+        ? `${pad(bold(title), titleSpace)} ${gray(position)}` : clip(bold(title), size - 5);
+      const lines = showHeading ? [`  ${cyan('╭─')} ${heading}`] : [];
 
-      for (let i = start; i < end; i++) {
+      if (showSearch) {
+        const count = searching ? t('ui.matches', { count: filteredIndices.length, total: selectableIndices.length }) : '';
+        const showCount = count && size >= width(count) + 16;
+        const inputWidth = Math.max(0, size - 6 - (showCount ? width(count) + 2 : 0));
+        const text = searching ? queryTail(query, inputWidth - 1) + cyan('▏') : dim(t('ui.search_hint'));
+        const content = showCount ? `${pad(text, inputWidth)}  ${dim(count)}` : clip(text, inputWidth);
+        lines.push(`  ${gray('│')} ${cyan('/')} ${content}`);
+      }
+
+      for (const i of displayIndices.slice(start, end)) {
         const choice = choices[i];
         if (choice.separator) {
-          lines.push(`  ${gray('│')} ${clip(dim(choice.name || ''), rowSize)}`);
+          lines.push(`  ${gray('│')} ${clip(dim(choice.name || ''), size - 4)}`);
           continue;
         }
         let label = choice.name;
@@ -119,17 +186,20 @@ export function select(message, choices, defaultIndex = 0) {
           label = pad(label, labelWidth) + dim(choice.description);
         }
         if (i === cursor) {
-          lines.push(`  ${cyan('│')}${inverse(cyan(pad(' › ' + plain(label), rowSize + 1)))}`);
+          lines.push(`  ${cyan('│')}${inverse(cyan(pad(' › ' + plain(label), size - 3)))}`);
         } else {
-          lines.push(`  ${gray('│')}   ${clip(label, rowSize - 2)}`);
+          lines.push(`  ${gray('│')}   ${clip(label, size - 6)}`);
         }
       }
 
-      const detail = !showDescriptions && choices[cursor].description;
-      if (detail) lines.push(`  ${gray('│')}   ${clip(dim(detail), rowSize - 2)}`);
-      const help = size < 44 ? t('ui.keys_short') : t('ui.keys');
-      lines.push(`  ${cyan('╰─')} ${clip(gray(help), size - 3)}`);
-      return lines;
+      if (!filteredIndices.length) lines.push(`  ${gray('│')}   ${dim(t('ui.no_matches'))}`);
+      if (showDetail) lines.push(`  ${gray('│')}   ${clip(dim(choices[cursor].description), size - 6)}`);
+      if (showHelp) {
+        const helpKey = searching ? 'ui.search_keys' : 'ui.keys';
+        const help = t(size < 54 ? helpKey + '_short' : helpKey);
+        lines.push(`  ${cyan('╰─')} ${clip(gray(help), size - 5)}`);
+      }
+      return lines.map((line) => clip(line, size));
     }
 
     function erase() {
@@ -147,6 +217,16 @@ export function select(message, choices, defaultIndex = 0) {
       stdout.write(lines.join('\n') + '\n');
     }
 
+    // Pasted text emits many keypresses in one turn; paint only the final state.
+    function scheduleDraw() {
+      if (drawScheduled || done) return;
+      drawScheduled = true;
+      queueMicrotask(() => {
+        drawScheduled = false;
+        if (!done) draw();
+      });
+    }
+
     const restoreCursor = () => stdout.write('\x1b[?25h');
     const terminate = () => { cleanup(); process.exit(143); };
     const hangup = () => { cleanup(); process.exit(129); };
@@ -159,7 +239,7 @@ export function select(message, choices, defaultIndex = 0) {
       } catch { /* TTY may already be restored. */ }
       process.stdin.removeListener('keypress', onKeypress);
       process.stdin.pause();
-      stdout.removeListener('resize', draw);
+      stdout.removeListener('resize', scheduleDraw);
       process.removeListener('exit', restoreCursor);
       process.removeListener('SIGTERM', terminate);
       process.removeListener('SIGHUP', hangup);
@@ -169,33 +249,55 @@ export function select(message, choices, defaultIndex = 0) {
     function onKeypress(str, key = {}) {
       if (done) return;
       let next = cursorPos;
-      if (key.name === 'up' || str === 'k') next--;
-      else if (key.name === 'down' || str === 'j') next++;
-      else if (key.name === 'home') next = 0;
-      else if (key.name === 'end') next = selectableIndices.length - 1;
-      else if (key.name === 'pageup') next -= maxVisible();
-      else if (key.name === 'pagedown') next += maxVisible();
-      else if (key.name === 'return' || key.name === 'enter') {
-        const choice = choices[getCursor()];
-        erase();
-        cleanup();
-        stdout.write(`  ${green('✓')} ${clip(`${message ? message + '  ' : ''}${bold(plain(choice.name))}`, columns() - 2)}\n`);
-        resolve(choice.value);
-        return;
-      } else if ((key.ctrl && key.name === 'c') || key.name === 'escape' || str === 'q') {
+      if ((key.ctrl && key.name === 'c') || (!searching && (key.name === 'escape' || str === 'q'))) {
         cleanup();
         stdout.write('\n');
         process.exit(0);
+        return;
       }
-      next = Math.max(0, Math.min(next, selectableIndices.length - 1));
-      if (next !== cursorPos) { cursorPos = next; draw(); }
+      if (key.name === 'escape') {
+        searching = false;
+        updateQuery('');
+        return;
+      }
+      if (key.name === 'up' || (!searching && str === 'k')) next--;
+      else if (key.name === 'down' || (!searching && str === 'j')) next++;
+      else if (key.name === 'home') next = 0;
+      else if (key.name === 'end') next = filteredIndices.length - 1;
+      else if (key.name === 'pageup') next -= layout().visible;
+      else if (key.name === 'pagedown') next += layout().visible;
+      else if (key.name === 'return' || key.name === 'enter') {
+        const choice = choices[getCursor()];
+        if (!choice) return;
+        erase();
+        cleanup();
+        stdout.write(clip(`  ${green('✓')} ${message ? message + '  ' : ''}${bold(plain(choice.name))}`, layout().size) + '\n');
+        resolve(choice.value);
+        return;
+      } else if (key.name === 'backspace' && searching) {
+        updateQuery(backspace(query));
+        return;
+      } else if (key.ctrl && key.name === 'u' && searching) {
+        updateQuery('');
+        return;
+      } else if (!searching && str === '/') {
+        searching = true;
+        scheduleDraw();
+        return;
+      } else if (str && !key.ctrl && !key.meta && !/[\x00-\x1f\x7f-\x9f]/u.test(str)) {
+        searching = true;
+        updateQuery(query + str);
+        return;
+      }
+      next = Math.max(0, Math.min(next, filteredIndices.length - 1));
+      if (next !== cursorPos) { cursorPos = next; scheduleDraw(); }
     }
 
     readline.emitKeypressEvents(process.stdin);
     process.stdin.on('keypress', onKeypress);
     process.stdin.setRawMode(true);
     process.stdin.resume();
-    stdout.on('resize', draw);
+    stdout.on('resize', scheduleDraw);
     process.once('exit', restoreCursor);
     process.once('SIGTERM', terminate);
     process.once('SIGHUP', hangup);
