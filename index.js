@@ -11,8 +11,8 @@ import { launchClaude } from './src/claude.js';
 import { launchCodex } from './src/codex.js';
 import { select } from './src/prompt.js';
 import { t, getLang, setLang } from './src/i18n.js';
-import { red, yellow, green } from './src/color.js';
-import { brandHeader, profileChoice, status } from './src/ui.js';
+import { yellow, green } from './src/color.js';
+import { brandHeader, profileChoice, status, fail } from './src/ui.js';
 import { listCommand } from './src/commands/list.js';
 import { newCommand } from './src/commands/new.js';
 import { editCommand } from './src/commands/edit.js';
@@ -22,14 +22,16 @@ import { helpCommand } from './src/commands/help.js';
 import { applyCommand } from './src/commands/apply.js';
 import { parseArgs, isDangerous } from './src/args.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
-
 const { cmd, rest, flags } = parseArgs(process.argv.slice(2));
 const ddd = isDangerous(flags);
 
+function readVersion() {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8')).version;
+}
+
 if (flags.has('-v') || flags.has('--version') || flags.has('-V')) {
-  console.log(pkg.version);
+  console.log(readVersion());
   process.exit(0);
 }
 
@@ -43,21 +45,13 @@ function launchProfile(name, type, d, args = []) {
   else launchClaude(name, d, args); // both 'claude' and 'deepseek' use Claude Code
 }
 
-async function pickProfile(messageKey) {
-  const all = store.getAllProfiles();
-  if (all.length === 0) return null;
-  const choices = all.map((p, i) => profileChoice(p, i));
-  return select(t(messageKey), choices);
-}
-
 async function mainMenu() {
   const all = store.getAllProfiles();
-  const count = all.length;
 
   console.log();
-  console.log(brandHeader(pkg.version, all));
+  console.log(brandHeader(readVersion(), all));
 
-  if (count === 0) {
+  if (all.length === 0) {
     console.log(yellow(`  ${t('menu.empty')}\n`));
     await newCommand([]);
     return;
@@ -81,7 +75,8 @@ async function mainMenu() {
 
   switch (action) {
     case 'launch': {
-      const p = await pickProfile('pick.launch');
+      // Reuse the listing already scanned for the header instead of rescanning.
+      const p = await select(t('pick.launch'), all.map(profileChoice));
       if (p) launchProfile(p.name, p.type, ddd);
       break;
     }
@@ -104,8 +99,7 @@ async function mainMenu() {
       await deleteCommand([]);
       break;
     case 'lang': {
-      const next = getLang() === 'en' ? 'zh' : 'en';
-      setLang(next);
+      setLang(getLang() === 'en' ? 'zh' : 'en');
       console.log(green(`  ${t('lang.switched')}\n`));
       await mainMenu();
       break;
@@ -131,13 +125,8 @@ async function main() {
     await commands[cmd](rest, flags);
   } else if (cmd) {
     const resolved = store.resolveProfile(cmd);
-    if (resolved) {
-      launchProfile(resolved.name, resolved.type, ddd, rest);
-    } else {
-      console.log(red(t('common.not_exist', { name: cmd })));
-      console.log(yellow(t('common.not_exist_hint')));
-      process.exit(1);
-    }
+    if (!resolved) fail(`${t('common.not_exist', { name: cmd })}\n${yellow(t('common.not_exist_hint'))}`);
+    launchProfile(resolved.name, resolved.type, ddd, rest);
   } else {
     await mainMenu();
   }

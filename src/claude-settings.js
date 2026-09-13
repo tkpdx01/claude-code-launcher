@@ -3,7 +3,8 @@
 import fs from 'fs';
 import { CLAUDE_SETTINGS_PATH } from './config.js';
 import { applyAnyRouterSettings } from './anyrouter.js';
-import { getClaudeProfileEnv, isModelOverrideKey } from './env.js';
+import { getClaudeProfileEnv } from './env.js';
+import { isModelOverrideKey } from './model-keys.js';
 import { t } from './i18n.js';
 
 function isObject(value) {

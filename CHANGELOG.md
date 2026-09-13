@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- Scan the profile directories once per command; listing 100+ profiles reads each file a single time instead of hundreds of `existsSync`/`readFileSync` calls.
+- Resolve `ccc <name>` by checking the two candidate files directly instead of loading every profile.
+- Build the CJK/emoji grapheme segmenter lazily and skip it for plain ASCII, share one collator for sorting, and read `package.json` only when the version is shown.
+- Repair a Codex profile config (sandbox cleanup, `[analytics]` scope, reserved provider rename) in one read and one write at launch.
+
+### Code quality
+
+- Share profile selection, API key prompting, and cancel/exit handling across the `apply`, `delete`, `edit`, `show`, and `new` commands.
+- Move provider defaults (endpoints, DeepSeek models) into one module and the reserved-provider rename into a pure, tested function.
+- Simplify prompt helpers so text and confirm prompts share one reader for TTY and piped input.
+- Publish only `index.js` and `src/` to npm and declare `engines.node >= 18`.
+- Add regression tests for disk traffic during listing and resolution, safe profile names, config repair, and cross-type profile replacement.
+
 ## 2.4.0 - 2026-09-10
 
 ### Features

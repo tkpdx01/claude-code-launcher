@@ -1,8 +1,8 @@
-import { profileChoice, panel, typeTag, pad, section } from '../ui.js';
+import { panel, typeTag, pad, section } from '../ui.js';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
-import { select } from '../prompt.js';
-import { cyan, gray, red, yellow, white, bold } from '../color.js';
+import { cyan, gray, yellow, white, bold } from '../color.js';
+import { selectProfile } from './shared.js';
 
 function maskKey(key) {
   if (!key) return t('common.not_set');
@@ -10,28 +10,13 @@ function maskKey(key) {
 }
 
 export async function showCommand(args) {
-  const all = store.getAllProfiles();
-  if (all.length === 0) {
-    console.log(yellow(t('common.no_profiles')));
-    process.exit(0);
-  }
-
-  let profileInfo;
-
-  if (!args[0]) {
-    const choices = all.map((p, i) => profileChoice(p, i));
-    profileInfo = await select(t('pick.show'), choices);
-  } else {
-    profileInfo = store.resolveProfile(args[0]);
-    if (!profileInfo) {
-      console.log(red(t('common.not_exist', { name: args[0] })));
-      process.exit(1);
-    }
-  }
+  const profileInfo = await selectProfile(args, 'pick.show');
 
   const isCodex = profileInfo.type === 'codex';
   const profile = isCodex ? store.readCodexProfile(profileInfo.name) : store.readClaudeProfile(profileInfo.name);
-  const credentials = isCodex ? store.getCodexCredentials(profileInfo.name) : store.getClaudeCredentials(profileInfo.name);
+  const credentials = isCodex
+    ? store.getCodexCredentials(profileInfo.name)
+    : { apiKey: profile?.apiKey || '', apiUrl: profile?.apiUrl || '' };
   console.log('\n' + panel([typeTag(profileInfo.type)], { title: `${bold(profileInfo.name)}` }));
   console.log();
 

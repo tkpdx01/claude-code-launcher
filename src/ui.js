@@ -2,11 +2,21 @@
 import { bold, cyan, green, blue, magenta, gray, yellow, red, dim } from './color.js';
 import { t } from './i18n.js';
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 const sgr = /\x1b\[[0-9;]*m/g;
+// Printable ASCII with no escape codes: one cell per character, no segmentation needed.
+const simpleText = /^[\x20-\x7e]*$/;
+
+// Intl.Segmenter takes several milliseconds to construct; most launcher output
+// is plain ASCII and never needs it, so build it on first use.
+let graphemeSegmenter;
+function graphemes(text) {
+  graphemeSegmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  return graphemeSegmenter.segment(text);
+}
 
 export function plain(value) {
-  return String(value).replace(sgr, '');
+  const text = String(value);
+  return text.includes('\x1b') ? text.replace(sgr, '') : text;
 }
 
 function cellWidth(grapheme) {
@@ -23,10 +33,21 @@ function cellWidth(grapheme) {
   ) ? 2 : 1;
 }
 
+// Yield [grapheme, cells] pairs; printable ASCII maps one character to one cell.
+function* cells(text) {
+  if (simpleText.test(text)) {
+    for (const ch of text) yield [ch, 1];
+    return;
+  }
+  for (const { segment } of graphemes(text)) yield [segment, cellWidth(segment)];
+}
+
 export function width(value) {
-  let cells = 0;
-  for (const { segment } of graphemes.segment(plain(value))) cells += cellWidth(segment);
-  return cells;
+  const text = plain(value);
+  if (simpleText.test(text)) return text.length;
+  let total = 0;
+  for (const [, size] of cells(text)) total += size;
+  return total;
 }
 
 export function clip(value, limit) {
@@ -34,17 +55,16 @@ export function clip(value, limit) {
   if (limit <= 0) return '';
   if (width(text) <= limit) return text;
   let result = '';
-  let cells = 0;
+  let used = 0;
   for (const token of text.match(/\x1b\[[0-9;]*m|[^\x1b]+/g) || []) {
     if (token.startsWith('\x1b')) {
       result += token;
       continue;
     }
-    for (const { segment } of graphemes.segment(token)) {
-      const size = cellWidth(segment);
-      if (cells + size > limit - 1) return result + '…' + (result.includes('\x1b') ? '\x1b[0m' : '');
+    for (const [segment, size] of cells(token)) {
+      if (used + size > limit - 1) return result + '…' + (result.includes('\x1b') ? '\x1b[0m' : '');
       result += segment;
-      cells += size;
+      used += size;
     }
   }
   return result;
@@ -59,10 +79,16 @@ export function columns(max = 76) {
   return Math.max(8, Math.min(max, (process.stdout.columns || 80) - 4));
 }
 
+const TYPE_LABELS = { codex: 'Codex', deepseek: 'DeepSeek' };
+const TYPE_COLORS = { codex: green, deepseek: blue };
+
+export function typeLabel(type) {
+  return TYPE_LABELS[type] || 'Claude';
+}
+
 export function typeTag(type) {
-  const label = type === 'codex' ? 'Codex' : type === 'deepseek' ? 'DeepSeek' : 'Claude';
-  const color = type === 'codex' ? green : type === 'deepseek' ? blue : magenta;
-  return color(`● ${label}`);
+  const color = TYPE_COLORS[type] || magenta;
+  return color(`● ${typeLabel(type)}`);
 }
 
 export function profileChoice(profile, index) {
@@ -125,4 +151,10 @@ export function status(kind, message, detail = '') {
   write(`\n  ${color(symbol)} ${bold(message)}`);
   if (detail) write(`    ${gray(detail)}`);
   write();
+}
+
+// Print a one-line error and stop; commands use this for user-facing validation failures.
+export function fail(message, code = 1) {
+  console.log(red(message));
+  process.exit(code);
 }

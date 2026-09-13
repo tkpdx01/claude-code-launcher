@@ -252,16 +252,17 @@ const strings = {
 let currentLang = 'en';
 
 // Load language from config on init
-function loadConfig() {
+function readConfig() {
   try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-      if (cfg.lang === 'zh' || cfg.lang === 'en') currentLang = cfg.lang;
-    }
-  } catch { /* ignore */ }
+    const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+    return cfg && typeof cfg === 'object' ? cfg : {};
+  } catch {
+    return {}; // Missing or malformed launcher config falls back to defaults.
+  }
 }
 
-loadConfig();
+const { lang } = readConfig();
+if (lang === 'zh' || lang === 'en') currentLang = lang;
 
 export function getLang() {
   return currentLang;
@@ -270,14 +271,9 @@ export function getLang() {
 export function setLang(lang) {
   currentLang = lang;
   try {
-    if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    let cfg = {};
-    if (fs.existsSync(CONFIG_PATH)) {
-      try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch { /* */ }
-    }
-    cfg.lang = lang;
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + '\n');
-  } catch { /* ignore */ }
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ ...readConfig(), lang }, null, 2) + '\n');
+  } catch { /* A read-only home only loses persistence, not the session switch. */ }
 }
 
 // Translate with optional interpolation: t('key', { name: 'foo' })

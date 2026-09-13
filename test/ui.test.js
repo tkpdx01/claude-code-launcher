@@ -59,3 +59,22 @@ test('redirected selectors preserve defaults and never enter raw mode', (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, '');
 });
+
+test('plain ASCII layout skips grapheme segmentation but wide text still measures by cell', (t) => {
+  const result = run(t, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    let constructed = 0;
+    const Original = Intl.Segmenter;
+    Intl.Segmenter = class extends Original { constructor(...args) { constructed++; super(...args); } };
+    const { width, pad, clip } = await import('./src/ui.js');
+    assert.equal(width('hello world'), 11);
+    assert.equal(width('\\x1b[36mhello\\x1b[39m'), 5);
+    assert.equal(pad('abc', 6), 'abc   ');
+    assert.equal(clip('abcdef', 4), 'abc…');
+    assert.equal(constructed, 0, 'ASCII must not construct a segmenter');
+    assert.equal(width('配置'), 4);
+    assert.equal(width('a配b'), 4);
+    assert.equal(constructed, 1, 'one shared segmenter for all wide text');
+  `]);
+  assert.equal(result.status, 0, result.stderr);
+});

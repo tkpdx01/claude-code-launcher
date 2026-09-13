@@ -10,7 +10,7 @@ import * as store from './store.js';
 import { red } from './color.js';
 import { t } from './i18n.js';
 import { spawnCli, superviseCli } from './spawn.js';
-import { status } from './ui.js';
+import { status, fail } from './ui.js';
 
 // Detect ccline at runtime — only set if binary exists
 function detectCcline() {
@@ -47,15 +47,8 @@ function writeTempSettings(profileName, settings) {
 
 export function launchClaude(profileName, dangerouslySkipPermissions = false, extraArgs = []) {
   const profile = store.readClaudeProfile(profileName);
-  if (!profile) {
-    console.log(red(t('common.not_exist', { name: profileName })));
-    process.exit(1);
-  }
-  if (!profile.apiKey) {
-    console.log(red(t('common.apikey_required')));
-    console.log(red(`  → ccc edit ${profileName}`));
-    process.exit(1);
-  }
+  if (!profile) fail(t('common.not_exist', { name: profileName }));
+  if (!profile.apiKey) fail(`${t('common.apikey_required')}\n  → ccc edit ${profileName}`);
 
   const isDeepseek = profile.type === 'deepseek';
 

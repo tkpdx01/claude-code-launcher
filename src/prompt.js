@@ -32,11 +32,10 @@ async function readNonTtyAnswer(defaultValue = '') {
   return answer.trim() || defaultValue;
 }
 
-// --- Text input ---
-export function input(message, defaultValue = '') {
+// Show a prompt and read one trimmed line; piped stdin consumes answers in order.
+function ask(prompt, defaultValue = '') {
   if (!process.stdin.isTTY) {
-    const suffix = defaultValue ? ` ${dim(`(${defaultValue})`)}` : '';
-    process.stdout.write(`  ${cyan('◆')} ${bold(message)}${suffix} `);
+    process.stdout.write(prompt);
     return readNonTtyAnswer(defaultValue).then((answer) => {
       process.stdout.write('\n');
       return answer;
@@ -45,8 +44,7 @@ export function input(message, defaultValue = '') {
 
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const suffix = defaultValue ? ` ${dim(`(${defaultValue})`)}` : '';
-    rl.question(`  ${cyan('◆')} ${bold(message)}${suffix} `, (answer) => {
+    rl.question(prompt, (answer) => {
       resolve(answer.trim() || defaultValue);
       rl.close();
     });
@@ -54,90 +52,18 @@ export function input(message, defaultValue = '') {
   });
 }
 
-// --- Password input (masked with *) ---
-export function password(message) {
-  return new Promise((resolve) => {
-    const stdout = process.stdout;
-    const origWrite = stdout.write.bind(stdout);
-    let value = '';
-    let done = false;
-
-    function cleanup() {
-      if (done) return;
-      done = true;
-      stdout.write = origWrite;
-      process.stdin.removeListener('data', onData);
-    }
-
-    origWrite(`${cyan('?')} ${message} `);
-    stdout.write = () => origWrite('');
-
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
-    rl.question('', () => {
-      cleanup();
-      origWrite('\n');
-      rl.close();
-      resolve(value);
-    });
-
-    rl.on('close', () => {
-      cleanup();
-      origWrite('\n');
-      resolve(value);
-    });
-
-    function onData(data) {
-      if (done) return;
-      const str = data.toString();
-      for (const ch of str) {
-        if (ch === '\x03') {
-          cleanup();
-          origWrite('\n');
-          rl.close();
-          process.exit(0);
-        }
-        if (ch === '\r' || ch === '\n') continue;
-        if (ch === '\x7f' || ch === '\b') {
-          if (value.length > 0) {
-            value = value.slice(0, -1);
-            origWrite('\b \b');
-          }
-        } else if (ch.charCodeAt(0) >= 32) {
-          value += ch;
-          origWrite('*');
-        }
-      }
-    }
-
-    process.stdin.on('data', onData);
-  });
+// --- Text input ---
+export function input(message, defaultValue = '') {
+  const suffix = defaultValue ? ` ${dim(`(${defaultValue})`)}` : '';
+  return ask(`  ${cyan('◆')} ${bold(message)}${suffix} `, defaultValue);
 }
 
 // --- Confirm (y/n) ---
-export function confirm(message, defaultValue = false) {
-  if (!process.stdin.isTTY) {
-    const hint = defaultValue ? 'Y/n' : 'y/N';
-    process.stdout.write(`  ${cyan('◆')} ${bold(message)} ${dim(`(${hint})`)} `);
-    return readNonTtyAnswer('').then((answer) => {
-      process.stdout.write('\n');
-      const a = answer.trim().toLowerCase();
-      if (a === '') return defaultValue;
-      return a === 'y' || a === 'yes';
-    });
-  }
-
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const hint = defaultValue ? 'Y/n' : 'y/N';
-    rl.question(`  ${cyan('◆')} ${bold(message)} ${dim(`(${hint})`)} `, (answer) => {
-      const a = answer.trim().toLowerCase();
-      if (a === '') resolve(defaultValue);
-      else resolve(a === 'y' || a === 'yes');
-      rl.close();
-    });
-    rl.on('close', () => resolve(defaultValue));
-  });
+export async function confirm(message, defaultValue = false) {
+  const hint = defaultValue ? 'Y/n' : 'y/N';
+  const answer = (await ask(`  ${cyan('◆')} ${bold(message)} ${dim(`(${hint})`)} `)).toLowerCase();
+  if (answer === '') return defaultValue;
+  return answer === 'y' || answer === 'yes';
 }
 
 // --- List selection (arrow keys, j/k, Home/End, Page Up/Down) ---
@@ -164,12 +90,13 @@ export function select(message, choices, defaultIndex = 0) {
     let renderedLines = [];
     let done = false;
     const maxVisible = () => Math.min(choices.length, Math.max(1, Math.min(12, (stdout.rows || 24) - 10)));
+    // Choices never change while the menu is open, so measure their labels once.
+    const labelWidth = Math.min(26, Math.max(16, ...selectableIndices.map((i) => width(choices[i].name)))) + 2;
 
     function render() {
       const size = columns();
       const rowSize = size - 2;
       const showDescriptions = size >= 54;
-      const labelWidth = Math.min(26, Math.max(16, ...choices.filter((c) => !c.separator).map((c) => width(c.name)))) + 2;
       const cursor = getCursor();
       const visible = maxVisible();
       const start = Math.max(0, Math.min(choices.length - visible, cursor - Math.floor(visible / 2)));

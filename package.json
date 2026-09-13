@@ -6,7 +6,14 @@
   "bin": {
     "ccc": "index.js"
   },
+  "files": [
+    "index.js",
+    "src/"
+  ],
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node --test"
   },

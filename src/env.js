@@ -3,8 +3,6 @@
 import { applyAnyRouterEnv } from './anyrouter.js';
 import { isModelOverrideKey } from './model-keys.js';
 
-export { isModelOverrideKey };
-
 // Shared by runtime settings, apply, and the child process environment.
 export function getClaudeProfileEnv(profile) {
   const env = { ...profile.settings?.env };

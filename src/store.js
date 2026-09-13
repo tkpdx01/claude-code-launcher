@@ -2,7 +2,14 @@
 
 import fs from 'fs';
 import path from 'path';
-import { tomlString, readTomlString, fixCodexAnalyticsScope } from './codex-config.js';
+import {
+  tomlString,
+  readTomlString,
+  fixCodexAnalyticsScope,
+  fixReservedProviderName,
+} from './codex-config.js';
+import { OPENAI_DEFAULT_BASE_URL } from './providers.js';
+import { isSafeProfileName } from './profile-name.js';
 import {
   CONFIG_DIR,
   PROFILES_DIR,
@@ -10,11 +17,39 @@ import {
   CODEX_HOME_PATH,
 } from './config.js';
 
+// One collator for every sort: String#localeCompare(locale) builds a new one per call.
+const collator = new Intl.Collator('zh-CN', { sensitivity: 'base' });
+const byName = (a, b) => collator.compare(a, b);
+
 // ---- Directory setup ----
 
 export function ensureDirs() {
   for (const dir of [CONFIG_DIR, PROFILES_DIR, CODEX_PROFILES_DIR]) {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+// ---- Shared file helpers ----
+
+const MISSING_FILE = new Set(['ENOENT', 'ENOTDIR', 'EISDIR']);
+
+// Returns null for a missing file; callers treat that like "no profile".
+function readText(file) {
+  try {
+    return fs.readFileSync(file, 'utf-8');
+  } catch (err) {
+    if (MISSING_FILE.has(err.code)) return null;
+    throw err;
+  }
+}
+
+// Unreadable or malformed JSON is skipped like a missing profile.
+function readJsonObject(file) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return raw && typeof raw === 'object' ? raw : null;
+  } catch {
+    return null;
   }
 }
 
@@ -25,28 +60,11 @@ function claudePath(name) {
 }
 
 function readProfileJson(name) {
-  const p = claudePath(name);
-  if (!fs.existsSync(p)) return null;
-  try {
-    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return raw && typeof raw === 'object' ? raw : null;
-  } catch {
-    return null;
-  }
+  return readJsonObject(claudePath(name));
 }
 
 export function claudeProfileExists(name) {
   return readClaudeProfile(name) != null;
-}
-
-function getClaudeNames() {
-  ensureDirs();
-  return fs
-    .readdirSync(PROFILES_DIR)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => f.slice(0, -5))
-    .filter((name) => readClaudeProfile(name) != null)
-    .sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
 }
 
 // Parse profile from raw JSON — handles both old (full settings.json) and new (slim) formats.
@@ -93,18 +111,6 @@ export function readClaudeProfile(name) {
   return parseClaudeProfile(readProfileJson(name));
 }
 
-// Check if a profile is still in old (full settings.json) format on disk
-export function isOldFormatProfile(name) {
-  const p = claudePath(name);
-  if (!fs.existsSync(p)) return false;
-  try {
-    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return raw.env?.ANTHROPIC_AUTH_TOKEN && !raw.type;
-  } catch {
-    return false;
-  }
-}
-
 export function saveClaudeProfile(name, profile) {
   ensureDirs();
   const data = { type: 'claude', ...profile };
@@ -112,22 +118,11 @@ export function saveClaudeProfile(name, profile) {
 }
 
 export function deleteClaudeProfile(name) {
-  const p = claudePath(name);
-  if (fs.existsSync(p)) fs.unlinkSync(p);
-}
-
-export function getClaudeCredentials(name) {
-  const profile = readClaudeProfile(name);
-  if (!profile) return { apiKey: '', apiUrl: '' };
-  return {
-    apiKey: profile.apiKey || '',
-    apiUrl: profile.apiUrl || '',
-  };
+  fs.rmSync(claudePath(name), { force: true });
 }
 
 // ---- Codex profiles ----
 
-const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const CCC_OPENAI_COMPAT_PROVIDER = 'ccc_openai';
 const GPT_55_MODEL = 'gpt-5.5';
 const GPT_55_CATALOG_FILE = 'model-catalog.gpt-5.5.json';
@@ -136,28 +131,20 @@ function codexDir(name) {
   return path.join(CODEX_PROFILES_DIR, name);
 }
 
+function codexAuthPath(name) {
+  return path.join(codexDir(name), 'auth.json');
+}
+
+function codexConfigPath(name) {
+  return path.join(codexDir(name), 'config.toml');
+}
+
 function codexDirExists(name) {
-  return fs.existsSync(path.join(codexDir(name), 'auth.json'));
+  return fs.existsSync(codexAuthPath(name));
 }
 
 export function codexProfileExists(name) {
   return codexDirExists(name) || readJsonCodexProfile(name) != null;
-}
-
-function getCodexNames() {
-  ensureDirs();
-  const names = new Set();
-  if (fs.existsSync(CODEX_PROFILES_DIR)) {
-    for (const entry of fs.readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })) {
-      if (entry.isDirectory() && codexDirExists(entry.name)) names.add(entry.name);
-    }
-  }
-  for (const file of fs.readdirSync(PROFILES_DIR)) {
-    if (!file.endsWith('.json')) continue;
-    const name = file.slice(0, -5);
-    if (readJsonCodexProfile(name)) names.add(name);
-  }
-  return [...names].sort((a, b) => a.localeCompare(b, 'zh-CN', { sensitivity: 'base' }));
 }
 
 export function materializeJsonCodexProfile(name) {
@@ -170,33 +157,22 @@ export function materializeJsonCodexProfile(name) {
 
 export function readCodexProfile(name) {
   materializeJsonCodexProfile(name);
-  const dir = codexDir(name);
-  const authPath = path.join(dir, 'auth.json');
-  const configPath = path.join(dir, 'config.toml');
-  if (!fs.existsSync(authPath)) return null;
-  try {
-    const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-    const configToml = fs.existsSync(configPath)
-      ? sanitizeCodexConfigToml(fs.readFileSync(configPath, 'utf-8'))
-      : '';
-    return { auth, configToml };
-  } catch {
-    return null;
-  }
+  const auth = readJsonObject(codexAuthPath(name));
+  if (!auth) return null;
+  const configToml = readText(codexConfigPath(name));
+  return { auth, configToml: configToml === null ? '' : sanitizeCodexConfigToml(configToml) };
 }
 
 export function saveCodexProfile(name, auth, configToml) {
   ensureDirs();
-  const dir = codexDir(name);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify(auth, null, 2) + '\n');
-  fs.writeFileSync(path.join(dir, 'config.toml'), sanitizeCodexConfigToml(configToml));
+  fs.mkdirSync(codexDir(name), { recursive: true });
+  fs.writeFileSync(codexAuthPath(name), JSON.stringify(auth, null, 2) + '\n');
+  fs.writeFileSync(codexConfigPath(name), sanitizeCodexConfigToml(configToml));
   if (readJsonCodexProfile(name)) fs.unlinkSync(claudePath(name));
 }
 
 export function deleteCodexProfile(name) {
-  const dir = codexDir(name);
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+  fs.rmSync(codexDir(name), { recursive: true, force: true });
   if (readJsonCodexProfile(name)) fs.unlinkSync(claudePath(name));
 }
 
@@ -261,8 +237,10 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const TOML_SECTION_HEADER = /^\s*\[[^\]]+\]\s*(?:#.*)?$/;
+
 function findFirstTomlSection(lines) {
-  const idx = lines.findIndex((line) => /^\s*\[[^\]]+\]\s*(?:#.*)?$/.test(line));
+  const idx = lines.findIndex((line) => TOML_SECTION_HEADER.test(line));
   return idx >= 0 ? idx : lines.length;
 }
 
@@ -310,7 +288,7 @@ function updateTomlSection(configToml, sectionName, updateBody) {
   }
 
   let end = start + 1;
-  while (end < lines.length && !/^\s*\[[^\]]+\]\s*(?:#.*)?$/.test(lines[end])) end += 1;
+  while (end < lines.length && !TOML_SECTION_HEADER.test(lines[end])) end += 1;
 
   const body = updateBody(lines.slice(start + 1, end));
   lines.splice(start + 1, end - start - 1, ...body);
@@ -334,7 +312,7 @@ function updateCodexProviderConfig(configToml, baseUrl) {
   if (!isCustomOpenAIBaseUrl(normalized)) return configToml;
 
   return updateTomlSection(configToml, `model_providers.${CCC_OPENAI_COMPAT_PROVIDER}`, (body) => {
-    const next = [...body].filter((line) => !/^\s*requires_openai_auth\s*=/.test(line));
+    const next = body.filter((line) => !/^\s*requires_openai_auth\s*=/.test(line));
     upsertBodyKey(next, 'name', '"OpenAI Compatible"');
     upsertBodyKey(next, 'base_url', tomlString(normalized));
     upsertBodyKey(next, 'env_key', '"OPENAI_API_KEY"');
@@ -379,7 +357,7 @@ function removeEmptyTomlSection(lines, sectionName) {
 
     let j = i + 1;
     const body = [];
-    while (j < lines.length && !/^\s*\[[^\]]+\]\s*(?:#.*)?$/.test(lines[j])) {
+    while (j < lines.length && !TOML_SECTION_HEADER.test(lines[j])) {
       body.push(lines[j]);
       j += 1;
     }
@@ -396,15 +374,19 @@ function removeEmptyTomlSection(lines, sectionName) {
   return result;
 }
 
-export function sanitizeCodexProfileConfig(name) {
-  const configPath = path.join(codexDir(name), 'config.toml');
-  if (!fs.existsSync(configPath)) return;
+// Bring an on-disk Codex profile config up to date in a single read/write:
+// drop obsolete sandbox keys, move misplaced [analytics] root keys, and
+// rename the reserved "openai" provider. Returns what changed.
+export function repairCodexProfileConfig(name) {
+  const configPath = codexConfigPath(name);
+  const original = readText(configPath);
+  if (original === null) return { changed: false, renamedProvider: false };
 
-  const original = fs.readFileSync(configPath, 'utf-8');
-  const sanitized = sanitizeCodexConfigToml(original);
-  if (sanitized !== original) {
-    fs.writeFileSync(configPath, sanitized);
-  }
+  const upstream = fixCodexAnalyticsScope(sanitizeCodexConfigToml(original));
+  const repaired = fixReservedProviderName(upstream);
+  const changed = repaired !== original;
+  if (changed) fs.writeFileSync(configPath, repaired);
+  return { changed, renamedProvider: repaired !== upstream };
 }
 
 function ensureGpt55CatalogFile(name) {
@@ -414,7 +396,7 @@ function ensureGpt55CatalogFile(name) {
   const source = path.join(CODEX_HOME_PATH, GPT_55_CATALOG_FILE);
   if (!fs.existsSync(source)) return false;
 
-  if (!fs.existsSync(path.dirname(target))) fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.copyFileSync(source, target);
   return true;
 }
@@ -465,22 +447,70 @@ export function updateCodexProfile(name, apiKey, baseUrl, model) {
 
 // ---- Unified (Claude + Codex) ----
 
+// One pass over both profile directories; every JSON file is read and parsed
+// exactly once. Entries carry the parsed JSON so callers can show details
+// without touching the disk again.
+function scanProfiles() {
+  ensureDirs();
+  const claude = [];
+  const codex = new Map();
+
+  for (const file of fs.readdirSync(PROFILES_DIR)) {
+    if (!file.endsWith('.json')) continue;
+    const name = file.slice(0, -5);
+    const raw = readProfileJson(name);
+    if (!raw) continue;
+    const slimCodex = parseJsonCodexProfile(raw);
+    if (slimCodex) {
+      codex.set(name, { name, type: 'codex', json: slimCodex });
+      continue;
+    }
+    const profile = parseClaudeProfile(raw);
+    if (profile) {
+      claude.push({ name, type: profile.type === 'deepseek' ? 'deepseek' : 'claude', json: profile });
+    }
+  }
+
+  for (const entry of fs.readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })) {
+    // A materialized directory wins over a slim JSON file of the same name.
+    if (entry.isDirectory() && codexDirExists(entry.name)) {
+      codex.set(entry.name, { name: entry.name, type: 'codex', json: null });
+    }
+  }
+
+  return [...claude, ...codex.values()].sort((a, b) => byName(a.name, b.name));
+}
+
 export function getAllProfiles() {
-  const claude = getClaudeNames().map((name) => {
-    const profile = readClaudeProfile(name);
-    const type = profile?.type === 'deepseek' ? 'deepseek' : 'claude';
-    return { name, type };
+  return scanProfiles().map(({ name, type }) => ({ name, type }));
+}
+
+// Listing view: endpoint per profile without re-reading the JSON files.
+export function getProfileSummaries() {
+  return scanProfiles().map(({ name, type, json }) => {
+    let url = '';
+    if (type !== 'codex') {
+      url = json.apiUrl || '';
+    } else if (json) {
+      url = json.apiUrl || OPENAI_DEFAULT_BASE_URL;
+    } else {
+      const configToml = readText(codexConfigPath(name));
+      url = (configToml && readTomlString(configToml, 'base_url')) || OPENAI_DEFAULT_BASE_URL;
+    }
+    return { name, type, url };
   });
-  const codex = getCodexNames().map((name) => ({ name, type: 'codex' }));
-  return [...claude, ...codex].sort((a, b) =>
-    a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' }),
-  );
 }
 
 export function resolveProfile(input) {
+  // Exact names win over numeric indices. A well-formed name maps to at most
+  // two files, so check those directly instead of scanning every profile.
+  if (isSafeProfileName(input)) {
+    const { exists, type } = anyProfileExists(input);
+    if (exists) return { name: input, type };
+  }
   const all = getAllProfiles();
-  const byName = all.find((p) => p.name === input);
-  if (byName) return byName;
+  const byExactName = all.find((p) => p.name === input);
+  if (byExactName) return byExactName;
   // Try as numeric index (1-based)
   const num = /^\d+$/.test(input) ? Number(input) : NaN;
   if (Number.isSafeInteger(num) && num >= 1 && num <= all.length) {

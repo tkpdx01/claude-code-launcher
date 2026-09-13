@@ -1,23 +1,33 @@
-import { typeTag, status, hint } from '../ui.js';
+import { typeTag, typeLabel, status, hint, fail } from '../ui.js';
 import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { input, confirm, select } from '../prompt.js';
 import { promptCodexModel } from '../models.js';
 import { normalizeProfileName, validateProfileName } from '../profile-name.js';
 import { applyAnyRouterProfile, isAnyRouterUrl } from '../anyrouter.js';
-import { red, yellow } from '../color.js';
+import {
+  ANTHROPIC_DEFAULT_BASE_URL,
+  DEEPSEEK_BASE_URL,
+  DEEPSEEK_MODELS,
+  OPENAI_DEFAULT_BASE_URL,
+} from '../providers.js';
 import { launchClaude } from '../claude.js';
 import { launchCodex } from '../codex.js';
+import { inputApiKey, cancel } from './shared.js';
 
-const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
-const DEEPSEEK_MODELS = [
-  { name: 'deepseek-chat (V3)', value: 'deepseek-chat' },
-  { name: 'deepseek-reasoner (R1)', value: 'deepseek-reasoner' },
-];
+// Claude and DeepSeek share profiles/<name>.json, Codex has its own directory.
+// When the new profile lands in the other storage, drop the stale one so the
+// name is never listed twice.
+function removeReplaced(replaced, newType) {
+  if (!replaced) return;
+  const wasCodex = replaced.type === 'codex';
+  if (wasCodex === (newType === 'codex')) return;
+  if (wasCodex) store.deleteCodexProfile(replaced.name);
+  else store.deleteClaudeProfile(replaced.name);
+}
 
 export async function newCommand(args) {
   let name = normalizeProfileName(args[0] || '');
-  let replacedProfile = null;
 
   const profileType = await select(t('common.profile_type'), [
     { name: typeTag('claude') + ' Code', value: 'claude' },
@@ -29,73 +39,44 @@ export async function newCommand(args) {
     name = normalizeProfileName(await input(t('common.profile_name')));
   }
   const v = validateProfileName(name);
-  if (v !== true) {
-    console.log(red(v));
-    process.exit(1);
-  }
+  if (v !== true) fail(v);
 
   const existing = store.anyProfileExists(name);
+  let replaced = null;
   if (existing.exists) {
-    const typeLabel = existing.type === 'codex' ? 'Codex' : existing.type === 'deepseek' ? 'DeepSeek' : 'Claude';
-    const overwrite = await confirm(t('new.exists', { name, type: typeLabel }), false);
-    if (!overwrite) {
-      console.log(yellow(t('common.cancelled')));
-      process.exit(0);
-    }
-    if (existing.type !== profileType) {
-      replacedProfile = { name, type: existing.type };
-    }
+    const overwrite = await confirm(t('new.exists', { name, type: typeLabel(existing.type) }), false);
+    if (!overwrite) cancel();
+    replaced = { name, type: existing.type };
   }
 
   if (profileType === 'codex') {
-    const baseUrl = await input('Base URL:', 'https://api.openai.com/v1');
-    const apiKey = await input('OPENAI_API_KEY:');
-    if (!apiKey) {
-      console.log(red(t('common.apikey_required')));
-      process.exit(1);
-    }
+    const baseUrl = await input('Base URL:', OPENAI_DEFAULT_BASE_URL);
+    const apiKey = await inputApiKey('OPENAI_API_KEY:');
     const model = await promptCodexModel(baseUrl, apiKey, '');
 
-    store.ensureDirs();
     store.createCodexProfile(name, apiKey, baseUrl, model);
-    if (replacedProfile?.type === 'claude' || replacedProfile?.type === 'deepseek') store.deleteClaudeProfile(replacedProfile.name);
+    removeReplaced(replaced, 'codex');
     status('success', t('new.created_codex', { name }));
 
-    if (await confirm(t('new.launch_codex'), false)) {
-      launchCodex(name);
-    }
+    if (await confirm(t('new.launch_codex'), false)) launchCodex(name);
   } else if (profileType === 'deepseek') {
-    const apiKey = await input('DeepSeek API Key:');
-    if (!apiKey) {
-      console.log(red(t('common.apikey_required')));
-      process.exit(1);
-    }
+    const apiKey = await inputApiKey('DeepSeek API Key:');
     const model = await select('Model:', DEEPSEEK_MODELS);
 
-    store.ensureDirs();
     store.saveClaudeProfile(name, { apiUrl: DEEPSEEK_BASE_URL, apiKey, model, type: 'deepseek' });
-    if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
+    removeReplaced(replaced, 'deepseek');
     status('success', t('new.created_deepseek', { name }));
 
-    if (await confirm(t('new.launch_deepseek'), false)) {
-      launchClaude(name);
-    }
+    if (await confirm(t('new.launch_deepseek'), false)) launchClaude(name);
   } else {
-    const apiUrl = await input('ANTHROPIC_BASE_URL:', 'https://api.anthropic.com');
-    const apiKey = await input('ANTHROPIC_AUTH_TOKEN:');
-    if (!apiKey) {
-      console.log(red(t('common.apikey_required')));
-      process.exit(1);
-    }
+    const apiUrl = await input('ANTHROPIC_BASE_URL:', ANTHROPIC_DEFAULT_BASE_URL);
+    const apiKey = await inputApiKey('ANTHROPIC_AUTH_TOKEN:');
 
-    store.ensureDirs();
     store.saveClaudeProfile(name, applyAnyRouterProfile({ apiUrl, apiKey }, { setDefaultModel: true }));
-    if (replacedProfile?.type === 'codex') store.deleteCodexProfile(replacedProfile.name);
+    removeReplaced(replaced, 'claude');
     status('success', t('new.created_claude', { name }));
     if (isAnyRouterUrl(apiUrl)) hint(t('new.anyrouter_1m'));
 
-    if (await confirm(t('new.launch_claude'), false)) {
-      launchClaude(name);
-    }
+    if (await confirm(t('new.launch_claude'), false)) launchClaude(name);
   }
 }
