@@ -3,6 +3,22 @@ import * as store from '../store.js';
 import { t } from '../i18n.js';
 import { cyan, gray, yellow, white, bold } from '../color.js';
 import { selectProfile } from './shared.js';
+import { scanToml } from '../toml.js';
+
+const sensitive = /key|token|secret|password|authorization|headers|cookie/i;
+function redact(value) {
+  if (Array.isArray(value)) return value.map(redact);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sensitive.test(key) ? '••••••••' : redact(item)]));
+}
+
+function redactToml(text) {
+  const { lines, eol, entries } = scanToml(text);
+  for (const entry of entries.reverse()) {
+    if (entry.path.some((key) => sensitive.test(key))) lines.splice(entry.start, entry.end - entry.start, `${entry.prefix}= "••••••••"`);
+  }
+  return lines.join(eol);
+}
 
 function maskKey(key) {
   if (!key) return t('common.not_set');
@@ -30,18 +46,18 @@ export async function showCommand(args) {
 
   if (isCodex && profile?.configToml) {
     section('config.toml');
-    for (const line of profile.configToml.split('\n')) console.log(`  ${gray(line)}`);
+    for (const line of redactToml(profile.configToml).split('\n')) console.log(`  ${gray(line)}`);
   }
   if (profile?.env && Object.keys(profile.env).length > 0) {
     section(t('show.extra_env'));
     for (const [key, value] of Object.entries(profile.env)) {
-      const display = /(?:key|token|secret|password)/i.test(key) ? maskKey(String(value)) : value;
+      const display = sensitive.test(key) ? maskKey(String(value)) : value;
       console.log(`  ${cyan(key)}  ${gray(display)}`);
     }
   }
   if (profile?.settings && Object.keys(profile.settings).length > 0) {
     section(t('show.settings_overrides'));
-    console.log(JSON.stringify(profile.settings, null, 2).split('\n').map((line) => `  ${gray(line)}`).join('\n'));
+    console.log(JSON.stringify(redact(profile.settings), null, 2).split('\n').map((line) => `  ${gray(line)}`).join('\n'));
   }
   console.log();
 }

@@ -20,4 +20,11 @@ export const bold = wrap(1, 22);
 export const dim = wrap(2, 22);
 export const inverse = wrap(7, 27);
 
+// Quiet accents on modern terminals; ordinary ANSI remains the fallback.
+const trueColor = /^(truecolor|24bit)$/.test(process.env.COLORTERM || '');
+export const accent = trueColor ? wrap('38;2;126;219;201', 39) : cyan;
+export const selected = trueColor
+  ? (value) => wrap('48;2;25;47;54', 49)(wrap('38;2;184;242;225', 39)(value))
+  : (value) => inverse(cyan(value));
+
 // Composable: bold(cyan('text'))

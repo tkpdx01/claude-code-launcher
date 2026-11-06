@@ -11,7 +11,7 @@ import { launchClaude } from './src/claude.js';
 import { launchCodex } from './src/codex.js';
 import { select } from './src/prompt.js';
 import { t, getLang, setLang } from './src/i18n.js';
-import { yellow, green } from './src/color.js';
+import { yellow } from './src/color.js';
 import { brandHeader, profileChoice, status, fail } from './src/ui.js';
 import { listCommand } from './src/commands/list.js';
 import { newCommand } from './src/commands/new.js';
@@ -20,12 +20,15 @@ import { deleteCommand } from './src/commands/delete.js';
 import { showCommand } from './src/commands/show.js';
 import { helpCommand } from './src/commands/help.js';
 import { applyCommand } from './src/commands/apply.js';
+import { cleanupCommand, restoreCommand } from './src/commands/recovery.js';
+import { defaultCommand } from './src/commands/default.js';
 import { parseArgs, isDangerous } from './src/args.js';
 
 const { cmd, rest, flags } = parseArgs(process.argv.slice(2));
 const ddd = isDangerous(flags);
 
 function readVersion() {
+  if (typeof CCC_VERSION !== 'undefined') return CCC_VERSION;
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8')).version;
 }
@@ -46,66 +49,30 @@ function launchProfile(name, type, d, args = []) {
 }
 
 async function mainMenu() {
-  const all = store.getAllProfiles();
-
-  console.log();
-  console.log(brandHeader(readVersion(), all));
-
-  if (all.length === 0) {
-    console.log(yellow(`  ${t('menu.empty')}\n`));
-    await newCommand([]);
-    return;
-  }
-
-  const langLabel = getLang() === 'zh' ? '中文' : 'EN';
-
-  const action = await select(t('ui.actions'), [
-    { name: `↗  ${t('menu.launch')}`, description: t('menu.launch.desc'), value: 'launch' },
-    { name: `⇄  ${t('menu.apply')}`, description: t('menu.apply.desc'), value: 'apply' },
-    { separator: true, name: '' },
-    { name: `+  ${t('menu.new')}`, description: t('menu.new.desc'), value: 'new' },
-    { name: `✎  ${t('menu.edit')}`, description: t('menu.edit.desc'), value: 'edit' },
-    { name: `◇  ${t('menu.show')}`, description: t('menu.show.desc'), value: 'show' },
-    { name: `≡  ${t('menu.list')}`, description: t('menu.list.desc'), value: 'list' },
-    { name: `−  ${t('menu.delete')}`, description: t('menu.delete.desc'), value: 'delete' },
-    { separator: true, name: '' },
-    { name: `◎  ${t('menu.lang')}`, description: `[${langLabel}]  ${t('menu.lang.desc')}`, value: 'lang', searchText: 'language' },
-    { name: `×  ${t('menu.exit')}`, value: 'exit' },
-  ].map((choice) => ({ ...choice, searchText: choice.searchText || choice.value })));
-
-  switch (action) {
-    case 'launch': {
-      // Reuse the listing already scanned for the header instead of rescanning.
-      const p = await select(t('pick.launch'), all.map(profileChoice));
-      if (p) launchProfile(p.name, p.type, ddd);
-      break;
-    }
-    case 'apply':
-      await applyCommand([]);
-      break;
-    case 'new':
-      await newCommand([]);
-      break;
-    case 'edit':
-      await editCommand([]);
-      break;
-    case 'show':
-      await showCommand([]);
-      break;
-    case 'list':
-      listCommand();
-      break;
-    case 'delete':
-      await deleteCommand([]);
-      break;
-    case 'lang': {
-      setLang(getLang() === 'en' ? 'zh' : 'en');
-      console.log(green(`  ${t('lang.switched')}\n`));
-      await mainMenu();
-      break;
-    }
-    case 'exit':
-      break;
+  // Piped stdin belongs to the child only when a profile is explicitly named.
+  if (!process.stdin.isTTY || !process.stdout.isTTY) { listCommand(); return; }
+  while (true) {
+    const all = store.getAllProfiles();
+    if (!all.length) { await newCommand([]); return; }
+    console.log('\n' + brandHeader(readVersion(), all));
+    const defaultName = store.getDefaultProfileName();
+    const choices = all.map((p, i) => {
+      const choice = profileChoice(p, i);
+      if (p.name === defaultName) choice.name += ' ★';
+      return choice;
+    });
+    const shortcuts = Object.fromEntries(Object.entries({
+      n: 'new', e: 'edit', a: 'apply', d: 'delete', s: 'show', f: 'default', l: 'lang', r: 'restore',
+    }).map(([key, action]) => [key, (profile) => ({ action, profile })]));
+    const selected = await select(t('pick.launch'), choices,
+      Math.max(0, all.findIndex((p) => p.name === defaultName)),
+      { shortcuts, hint: t('ui.profile_keys') });
+    if (!selected) return;
+    if (!selected.action) { launchProfile(selected.name, selected.type, ddd); return; }
+    if (selected.action === 'lang') { setLang(getLang() === 'en' ? 'zh' : 'en'); continue; }
+    if (!selected.profile && !['new', 'restore'].includes(selected.action)) continue;
+    const launched = await commands[selected.action](selected.action === 'new' || selected.action === 'restore' ? [] : [selected.profile.name]);
+    if (launched === true) return;
   }
 }
 
@@ -118,6 +85,9 @@ const commands = {
   rm: deleteCommand,
   show: showCommand,
   apply: applyCommand,
+  cleanup: cleanupCommand,
+  restore: restoreCommand,
+  default: defaultCommand,
 };
 
 async function main() {

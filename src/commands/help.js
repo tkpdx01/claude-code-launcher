@@ -32,6 +32,9 @@ export function helpCommand() {
     ['ccc show [profile]', t('help.cmd.show')],
     ['ccc apply [profile]', t('help.cmd.apply')],
     ['ccc delete [profile]', t('help.cmd.delete')],
+    ['ccc default [profile]', t('help.cmd.default')],
+    ['ccc cleanup --keep <names>', t('help.cmd.cleanup')],
+    ['ccc restore [id]', t('help.cmd.restore')],
   ]);
   console.log();
 }

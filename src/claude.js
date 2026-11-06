@@ -98,7 +98,7 @@ export function launchClaude(profileName, dangerouslySkipPermissions = false, ex
     const child = spawnCli('claude', args, { stdio: 'inherit', env: childEnv });
     superviseCli(child, {
       cleanup,
-      onError: (err) => console.log(red(t('launch.failed', { msg: err.message }))),
+      onError: (err) => console.error(red(t('launch.failed', { msg: err.message }))),
     });
   } catch (err) {
     cleanup();

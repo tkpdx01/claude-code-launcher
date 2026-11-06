@@ -4,12 +4,13 @@ import fs from 'fs';
 import path from 'path';
 import {
   tomlString,
-  readTomlString,
   fixCodexAnalyticsScope,
   fixReservedProviderName,
 } from './codex-config.js';
 import { OPENAI_DEFAULT_BASE_URL } from './providers.js';
 import { isSafeProfileName } from './profile-name.js';
+import { atomicWrite, atomicWriteBatch, privateDir, exists } from './files.js';
+import { setTomlValue, tomlText, scanToml } from './toml.js';
 import {
   CONFIG_DIR,
   PROFILES_DIR,
@@ -25,7 +26,7 @@ const byName = (a, b) => collator.compare(a, b);
 
 export function ensureDirs() {
   for (const dir of [CONFIG_DIR, PROFILES_DIR, CODEX_PROFILES_DIR]) {
-    fs.mkdirSync(dir, { recursive: true });
+    privateDir(dir);
   }
 }
 
@@ -114,7 +115,7 @@ export function readClaudeProfile(name) {
 export function saveClaudeProfile(name, profile) {
   ensureDirs();
   const data = { type: 'claude', ...profile };
-  fs.writeFileSync(claudePath(name), JSON.stringify(data, null, 2) + '\n');
+  atomicWrite(claudePath(name), JSON.stringify(data, null, 2) + '\n');
 }
 
 export function deleteClaudeProfile(name) {
@@ -165,9 +166,11 @@ export function readCodexProfile(name) {
 
 export function saveCodexProfile(name, auth, configToml) {
   ensureDirs();
-  fs.mkdirSync(codexDir(name), { recursive: true });
-  fs.writeFileSync(codexAuthPath(name), JSON.stringify(auth, null, 2) + '\n');
-  fs.writeFileSync(codexConfigPath(name), sanitizeCodexConfigToml(configToml));
+  privateDir(codexDir(name));
+  atomicWriteBatch([
+    { file: codexConfigPath(name), data: sanitizeCodexConfigToml(configToml) },
+    { file: codexAuthPath(name), data: JSON.stringify(auth, null, 2) + '\n' },
+  ]);
   if (readJsonCodexProfile(name)) fs.unlinkSync(claudePath(name));
 }
 
@@ -184,8 +187,9 @@ export function getCodexCredentials(name) {
     let baseUrl = '';
     let model = '';
     if (profile.configToml) {
-      baseUrl = readTomlString(profile.configToml, 'base_url');
-      model = readTomlString(profile.configToml, 'model');
+      const config = fixCodexAnalyticsScope(profile.configToml);
+      baseUrl = getCodexBaseUrl(config);
+      model = tomlText(config, ['model']);
     }
     return { apiKey, baseUrl: baseUrl || OPENAI_DEFAULT_BASE_URL, model };
   }
@@ -233,92 +237,22 @@ export function generateCodexConfigToml(baseUrl, model) {
   return lines.join('\n');
 }
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-const TOML_SECTION_HEADER = /^\s*\[[^\]]+\]\s*(?:#.*)?$/;
-
-function findFirstTomlSection(lines) {
-  const idx = lines.findIndex((line) => TOML_SECTION_HEADER.test(line));
-  return idx >= 0 ? idx : lines.length;
-}
-
-function updateRootKey(configToml, key, value) {
-  const newline = configToml.includes('\r\n') ? '\r\n' : '\n';
-  const lines = configToml.split(/\r?\n/);
-  const firstSection = findFirstTomlSection(lines);
-  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`);
-  let found = false;
-  const next = [];
-
-  for (let i = 0; i < lines.length; i += 1) {
-    if (i < firstSection && keyPattern.test(lines[i])) {
-      found = true;
-      if (value !== null) next.push(`${key} = ${value}`);
-      continue;
-    }
-    next.push(lines[i]);
-  }
-
-  if (!found && value !== null) {
-    let insertAt = firstSection;
-    while (insertAt > 0 && next[insertAt - 1]?.trim() === '') insertAt -= 1;
-    next.splice(insertAt, 0, `${key} = ${value}`);
-  }
-
-  return next.join(newline);
-}
-
-function updateTomlSection(configToml, sectionName, updateBody) {
-  const newline = configToml.includes('\r\n') ? '\r\n' : '\n';
-  const lines = configToml.split(/\r?\n/);
-  const headerPattern = new RegExp(`^\\s*\\[${escapeRegExp(sectionName)}\\]\\s*(?:#.*)?$`);
-  const start = lines.findIndex((line) => headerPattern.test(line));
-
-  if (start < 0) {
-    const body = updateBody([]);
-    return [
-      configToml.trimEnd(),
-      '',
-      `[${sectionName}]`,
-      ...body,
-      '',
-    ].join(newline);
-  }
-
-  let end = start + 1;
-  while (end < lines.length && !TOML_SECTION_HEADER.test(lines[end])) end += 1;
-
-  const body = updateBody(lines.slice(start + 1, end));
-  lines.splice(start + 1, end - start - 1, ...body);
-  return lines.join(newline);
-}
-
-function upsertBodyKey(lines, key, value) {
-  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`);
-  const idx = lines.findIndex((line) => keyPattern.test(line));
-  if (idx >= 0) {
-    lines[idx] = `${key} = ${value}`;
-  } else {
-    let insertAt = lines.length;
-    while (insertAt > 0 && lines[insertAt - 1]?.trim() === '') insertAt -= 1;
-    lines.splice(insertAt, 0, `${key} = ${value}`);
-  }
-}
+const updateRootKey = (text, key, value) => setTomlValue(text, [key], value);
 
 function updateCodexProviderConfig(configToml, baseUrl) {
   const normalized = normalizeBaseUrl(baseUrl) || OPENAI_DEFAULT_BASE_URL;
   if (!isCustomOpenAIBaseUrl(normalized)) return configToml;
+  for (const [key, value] of Object.entries({
+    name: '"OpenAI Compatible"', base_url: tomlString(normalized),
+    env_key: '"OPENAI_API_KEY"', wire_api: '"responses"', requires_openai_auth: null,
+  })) configToml = setTomlValue(configToml, ['model_providers', CCC_OPENAI_COMPAT_PROVIDER, key], value);
+  return configToml;
+}
 
-  return updateTomlSection(configToml, `model_providers.${CCC_OPENAI_COMPAT_PROVIDER}`, (body) => {
-    const next = body.filter((line) => !/^\s*requires_openai_auth\s*=/.test(line));
-    upsertBodyKey(next, 'name', '"OpenAI Compatible"');
-    upsertBodyKey(next, 'base_url', tomlString(normalized));
-    upsertBodyKey(next, 'env_key', '"OPENAI_API_KEY"');
-    upsertBodyKey(next, 'wire_api', '"responses"');
-    return next;
-  });
+export function getCodexBaseUrl(config) {
+  const provider = tomlText(config, ['model_provider']) || 'openai';
+  return tomlText(config, ['model_providers', provider, 'base_url'])
+    || (provider === 'openai' ? OPENAI_DEFAULT_BASE_URL : '');
 }
 
 function updateCodexConfigToml(configToml, baseUrl, model) {
@@ -337,41 +271,17 @@ function updateCodexConfigToml(configToml, baseUrl, model) {
 }
 
 export function sanitizeCodexConfigToml(configToml = '') {
-  const newline = configToml.includes('\r\n') ? '\r\n' : '\n';
-  const lines = configToml.split(/\r?\n/);
-  const filtered = lines.filter((line) => (
-    !/^\s*sandbox(?:_mode|_permissions)?\s*=/.test(line)
-  ));
-  return removeEmptyTomlSection(filtered, 'windows').join(newline);
-}
-
-function removeEmptyTomlSection(lines, sectionName) {
-  const result = [];
-  for (let i = 0; i < lines.length;) {
-    const header = lines[i].match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/);
-    if (!header || header[1].trim().toLowerCase() !== sectionName) {
-      result.push(lines[i]);
-      i += 1;
-      continue;
-    }
-
-    let j = i + 1;
-    const body = [];
-    while (j < lines.length && !TOML_SECTION_HEADER.test(lines[j])) {
-      body.push(lines[j]);
-      j += 1;
-    }
-
-    const hasContent = body.some((line) => {
-      const trimmed = line.trim();
-      return trimmed && !trimmed.startsWith('#');
-    });
-    if (hasContent) {
-      result.push(lines[i], ...body);
-    }
-    i = j;
+  const { lines, eol, entries, sections } = scanToml(configToml);
+  const remove = new Set();
+  for (const entry of entries.filter((e) => /^sandbox(?:_mode|_permissions)?$/.test(e.path.at(-1)))) {
+    for (let i = entry.start; i < entry.end; i++) remove.add(i);
   }
-  return result;
+  for (const section of sections.filter((s) => s.path.length === 1 && s.path[0] === 'windows')) {
+    const content = lines.slice(section.start + 1, section.end)
+      .some((line, i) => !remove.has(section.start + 1 + i) && line.trim() && !line.trim().startsWith('#'));
+    if (!content) for (let i = section.start; i < section.end; i++) remove.add(i);
+  }
+  return lines.filter((_, i) => !remove.has(i)).join(eol);
 }
 
 // Bring an on-disk Codex profile config up to date in a single read/write:
@@ -385,7 +295,7 @@ export function repairCodexProfileConfig(name) {
   const upstream = fixCodexAnalyticsScope(sanitizeCodexConfigToml(original));
   const repaired = fixReservedProviderName(upstream);
   const changed = repaired !== original;
-  if (changed) fs.writeFileSync(configPath, repaired);
+  if (changed) atomicWrite(configPath, repaired);
   return { changed, renamedProvider: repaired !== upstream };
 }
 
@@ -396,8 +306,7 @@ function ensureGpt55CatalogFile(name) {
   const source = path.join(CODEX_HOME_PATH, GPT_55_CATALOG_FILE);
   if (!fs.existsSync(source)) return false;
 
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(source, target);
+  atomicWrite(target, fs.readFileSync(source));
   return true;
 }
 
@@ -418,7 +327,7 @@ export function copyCodexProfileSupportFiles(name, targetDir) {
 
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.isFile() && /^model-catalog.*\.json$/i.test(entry.name)) {
-      fs.copyFileSync(path.join(dir, entry.name), path.join(targetDir, entry.name));
+      atomicWrite(path.join(targetDir, entry.name), fs.readFileSync(path.join(dir, entry.name)));
     }
   }
 }
@@ -495,7 +404,7 @@ export function getProfileSummaries() {
       url = json.apiUrl || OPENAI_DEFAULT_BASE_URL;
     } else {
       const configToml = readText(codexConfigPath(name));
-      url = (configToml && readTomlString(configToml, 'base_url')) || OPENAI_DEFAULT_BASE_URL;
+      url = configToml ? getCodexBaseUrl(fixCodexAnalyticsScope(configToml)) : OPENAI_DEFAULT_BASE_URL;
     }
     return { name, type, url };
   });
@@ -506,7 +415,7 @@ export function resolveProfile(input) {
   // two files, so check those directly instead of scanning every profile.
   if (isSafeProfileName(input)) {
     const { exists, type } = anyProfileExists(input);
-    if (exists) return { name: input, type };
+    if (exists) return { name: type === 'codex' ? canonicalCodexName(input) : input, type };
   }
   const all = getAllProfiles();
   const byExactName = all.find((p) => p.name === input);
@@ -533,4 +442,65 @@ export function anyProfileExists(name) {
 
 export function getCodexProfileDir(name) {
   return codexDir(name);
+}
+
+// Old directory names remain as links so absolute session/database paths stay valid.
+export function canonicalCodexName(name) {
+  const dir = codexDir(name);
+  if (!exists(dir) || !fs.lstatSync(dir).isSymbolicLink()) return name;
+  const actual = fs.realpathSync(dir);
+  if (path.dirname(actual) !== fs.realpathSync(CODEX_PROFILES_DIR)) {
+    throw new Error('Codex profile link points outside the profile directory');
+  }
+  return path.basename(actual);
+}
+
+export function renameCodexProfile(name, newName) {
+  if (!isSafeProfileName(newName) || exists(codexDir(newName)) || exists(claudePath(newName))) {
+    throw new Error('Profile name is invalid or already exists');
+  }
+  materializeJsonCodexProfile(name);
+  name = canonicalCodexName(name);
+  const source = codexDir(name);
+  const target = codexDir(newName);
+  fs.renameSync(source, target);
+  try {
+    fs.symlinkSync(process.platform === 'win32' ? target : newName, source,
+      process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    fs.renameSync(target, source);
+    throw error;
+  }
+  if (getDefaultProfileName() === name) setDefaultProfile(newName);
+}
+
+export function getDefaultProfileName() {
+  const name = readText(path.join(CONFIG_DIR, 'default'))?.trim();
+  return isSafeProfileName(name) ? name : '';
+}
+
+export function setDefaultProfile(name) {
+  if (name && !isSafeProfileName(name)) throw new Error('Invalid default profile name');
+  ensureDirs();
+  atomicWrite(path.join(CONFIG_DIR, 'default'), name ? name + '\n' : '');
+}
+
+export function profilePaths(profiles) {
+  const targets = new Set();
+  for (const { name, type } of profiles) {
+    if (!isSafeProfileName(name)) throw new Error('Invalid profile name');
+    if (type === 'codex') {
+      if (exists(codexDir(name))) targets.add(codexDir(name));
+      if (readJsonCodexProfile(name)) targets.add(claudePath(name));
+    } else targets.add(claudePath(name));
+  }
+  // Include rename links, without following them when moving/deleting.
+  const actualTargets = new Set([...targets].map((file) => fs.realpathSync(file)));
+  for (const entry of fs.readdirSync(CODEX_PROFILES_DIR, { withFileTypes: true })) {
+    if (!entry.isSymbolicLink()) continue;
+    const link = codexDir(entry.name);
+    try { if (actualTargets.has(fs.realpathSync(link))) targets.add(link); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  return [...targets];
 }

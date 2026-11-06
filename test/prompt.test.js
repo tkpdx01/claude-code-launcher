@@ -250,3 +250,45 @@ test('quit, Escape, Ctrl+C, and termination signals restore the terminal and can
     assert.deepEqual(exits, [0, 0, 0, 143, 129]);
   `);
 });
+
+test('secret input hides both old and typed keys and restores the terminal on acceptance or cancellation', (t) => {
+  runMenu(t, String.raw`
+    const { secretInput } = await import('./src/prompt.js');
+    const result = secretInput('API Key:', 'old-secret-never-print');
+    await press('new-secret-never-printX\x7f\r');
+    assert.equal(await result, 'new-secret-never-print');
+    assert.doesNotMatch(writes.join(''), /old-secret-never-print|new-secret-never-print/);
+    assert.equal(rawModes.at(-1), false);
+    assert.equal(stdin.listenerCount('keypress'), 0);
+    const kept = secretInput('API Key:', 'old-secret-never-print');
+    await press('\r');
+    assert.equal(await kept, 'old-secret-never-print');
+    assert.doesNotMatch(writes.join(''), /old-secret-never-print/);
+    const exits = [];
+    process.exit = (code) => exits.push(code);
+    secretInput('API Key:');
+    await press('discarded-secret\x03');
+    assert.deepEqual(exits, [130]);
+    assert.equal(rawModes.at(-1), false);
+    assert.equal(stdin.listenerCount('keypress'), 0);
+    assert.equal(process.listenerCount('SIGTERM'), 0);
+    assert.equal(process.listenerCount('SIGHUP'), 0);
+  `);
+});
+
+test('profile shortcuts act on the selected profile without consuming ordinary search letters', (t) => {
+  runMenu(t, String.raw`
+    const result = select('Profiles', [{ name: 'Alpha', value: 'a' }, { name: 'Beta', value: 'b' }], 1, {
+      shortcuts: { e: (profile) => ({ action: 'edit', profile }) }, hint: '^E edit',
+    });
+    await press('\x05');
+    assert.deepEqual(await result, { action: 'edit', profile: 'b' });
+    assertRestored();
+    const search = select('Profiles', [{ name: 'Beta', value: 'b' }, { name: 'Echo', value: 'e' }], 0, {
+      shortcuts: { e: (profile) => ({ action: 'edit', profile }) },
+    });
+    await press('echo\r');
+    assert.equal(await search, 'e');
+    assertRestored();
+  `);
+});

@@ -1,4 +1,6 @@
 node_modules/
+dist/
+*.tgz
 cc-switch-export-20251212_191735.sql
 allapihub/accounts-backup-2025-12-19.json
 allapihub/all-api-hub-backup-2025-12-19.json

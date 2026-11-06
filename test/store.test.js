@@ -57,7 +57,7 @@ function seed(f, count) {
   f.write('.ccc/profiles/deep.json', { type: 'deepseek', apiKey: 'k', model: 'deepseek-chat' });
   f.write('.ccc/profiles/slim.json', { type: 'codex', apiKey: 'k', apiUrl: 'https://slim.example.test/v1' });
   f.write('.ccc/codex-profiles/dir/auth.json', { OPENAI_API_KEY: 'k' });
-  f.write('.ccc/codex-profiles/dir/config.toml', 'model = "m"\n\n[model_providers.ccc_openai]\nbase_url = "https://dir.example.test/v1"\n');
+  f.write('.ccc/codex-profiles/dir/config.toml', 'model = "m"\nmodel_provider = "ccc_openai"\n\n[model_providers.ccc_openai]\nbase_url = "https://dir.example.test/v1"\n');
   f.write('.ccc/profiles/broken.json', '{ not json');
   f.write('.ccc/profiles/notes.txt', 'ignored');
   return names;
@@ -201,6 +201,6 @@ test('unknown profiles print the hint and exit without launching', (t) => {
   f.write('.ccc/profiles/demo.json', { type: 'claude', apiKey: 'k' });
   const result = f.run([cliPath, 'missing']);
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /missing/);
-  assert.match(result.stdout, /ccc list/);
+  assert.match(result.stderr, /missing/);
+  assert.match(result.stderr, /ccc list/);
 });

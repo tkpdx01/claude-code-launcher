@@ -3,12 +3,29 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG_DIR } from './config.js';
+import { atomicWrite } from './files.js';
 
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 const strings = {
   en: {
     'ui.workspace': 'Your AI workspace',
+    'ui.profile_keys': '↵ launch · ^E edit · ^N new · ^A apply · ^D delete · / search',
+    'common.keep_secret': '(Enter to keep current key)',
+    'new.alias': 'This name is a session compatibility link; use "{name}"',
+    'default.saved': 'Default profile: {name}',
+    'cleanup.usage': 'Usage: ccc cleanup --keep <names...> [--dry-run | --apply [--yes]]',
+    'cleanup.empty': 'Nothing to clean up',
+    'cleanup.preview': '{count} profiles would be archived. Add --apply to proceed.',
+    'cleanup.confirm': 'Archive these {count} profiles? Sessions will be preserved.',
+    'recovery.saved': 'Restore with: ccc restore {id}',
+    'recovery.empty': 'No recovery records',
+    'recovery.select': 'Select a recovery record:',
+    'recovery.confirm': 'Restore these files?',
+    'recovery.restored': 'Restored',
+    'help.cmd.default': 'Show or set the default profile',
+    'help.cmd.cleanup': 'Preview cleanup; add --apply to archive',
+    'help.cmd.restore': 'Restore archived profiles or applied settings',
     'ui.actions': 'What would you like to do?',
     'ui.keys': '↑↓ or j/k move · / search · enter select · q quit',
     'ui.keys_short': '/ search · ↑↓ · ↵ · q',
@@ -23,25 +40,7 @@ const strings = {
     'ui.endpoint': 'Endpoint',
     'ui.count': '{count} available',
     // Main menu
-    'menu.header': '{count} profiles · ccc <name> to quick launch',
     'menu.empty': 'No profiles yet. Let\'s create one.',
-    'menu.launch': 'Launch',
-    'menu.launch.desc': 'Start claude/codex with a profile',
-    'menu.apply': 'Apply',
-    'menu.apply.desc': 'Write credentials to main config',
-    'menu.new': 'New',
-    'menu.new.desc': 'Create a new profile',
-    'menu.edit': 'Edit',
-    'menu.edit.desc': 'Edit profile credentials',
-    'menu.show': 'Show',
-    'menu.show.desc': 'View profile details',
-    'menu.list': 'List',
-    'menu.list.desc': 'List all profiles',
-    'menu.delete': 'Delete',
-    'menu.delete.desc': 'Remove a profile',
-    'menu.exit': 'Exit',
-    'menu.lang': 'Language',
-    'menu.lang.desc': 'English / 中文',
 
     // Pick profile
     'pick.launch': 'Select profile to launch:',
@@ -87,7 +86,7 @@ const strings = {
     'edit.exists': 'Profile "{name}" already exists',
 
     // Delete
-    'delete.confirm': 'Delete {type} profile "{name}"?',
+    'delete.confirm': 'Archive {type} profile "{name}" for recovery?',
     'delete.done': 'Deleted {type} profile "{name}"',
 
     // Show
@@ -121,7 +120,7 @@ const strings = {
 
     // Help
     'help.interactive': 'Interactive:',
-    'help.interactive.ccc': 'Main menu (launch, apply, manage)',
+    'help.interactive.ccc': 'Profile picker; Enter launches the default selection',
     'help.quick': 'Quick launch:',
     'help.quick.name': 'Launch by name',
     'help.quick.number': 'Launch by index',
@@ -141,6 +140,22 @@ const strings = {
 
   zh: {
     'ui.workspace': '你的 AI 工作台',
+    'ui.profile_keys': '↵ 启动 · ^E 编辑 · ^N 新建 · ^A 应用 · ^D 删除 · / 搜索',
+    'common.keep_secret': '（回车保留当前密钥）',
+    'new.alias': '此名称是会话兼容链接，请使用 "{name}"',
+    'default.saved': '默认配置：{name}',
+    'cleanup.usage': '用法：ccc cleanup --keep <名称...> [--dry-run | --apply [--yes]]',
+    'cleanup.empty': '没有需要清理的配置',
+    'cleanup.preview': '将归档 {count} 个配置。添加 --apply 执行。',
+    'cleanup.confirm': '归档这 {count} 个配置？会话数据将一并保留。',
+    'recovery.saved': '恢复命令：ccc restore {id}',
+    'recovery.empty': '没有可恢复记录',
+    'recovery.select': '选择恢复记录：',
+    'recovery.confirm': '恢复这些文件？',
+    'recovery.restored': '已恢复',
+    'help.cmd.default': '查看或设置默认配置',
+    'help.cmd.cleanup': '预览清理；添加 --apply 执行归档',
+    'help.cmd.restore': '恢复已归档的配置或应用前的设置',
     'ui.actions': '准备做什么？',
     'ui.keys': '↑↓ 或 j/k 移动 · / 搜索 · enter 选择 · q 退出',
     'ui.keys_short': '/ 搜索 · ↑↓ · ↵ · q',
@@ -154,25 +169,7 @@ const strings = {
     'ui.type': '服务商',
     'ui.endpoint': 'API 地址',
     'ui.count': '{count} 个可用配置',
-    'menu.header': '{count} 个 profile · ccc <name> 快速启动',
     'menu.empty': '还没有 profile，开始创建一个吧',
-    'menu.launch': '启动',
-    'menu.launch.desc': '选择 profile 启动 claude / codex',
-    'menu.apply': '应用',
-    'menu.apply.desc': '写入主配置（支持原生启动）',
-    'menu.new': '新建',
-    'menu.new.desc': '创建 profile',
-    'menu.edit': '编辑',
-    'menu.edit.desc': '修改凭证',
-    'menu.show': '查看',
-    'menu.show.desc': '查看 profile 详情',
-    'menu.list': '列表',
-    'menu.list.desc': '列出所有 profile',
-    'menu.delete': '删除',
-    'menu.delete.desc': '删除 profile',
-    'menu.exit': '退出',
-    'menu.lang': '语言',
-    'menu.lang.desc': 'English / 中文',
 
     'pick.launch': '选择要启动的 profile:',
     'pick.apply': '选择要应用的 profile:',
@@ -212,7 +209,7 @@ const strings = {
     'edit.updated': 'Profile "{name}" 已更新',
     'edit.exists': 'Profile "{name}" 已存在',
 
-    'delete.confirm': '删除 {type} profile "{name}"？',
+    'delete.confirm': '将 {type} 配置 "{name}" 移入可恢复归档？',
     'delete.done': '已删除 {type} profile "{name}"',
 
     'show.extra_env': '额外环境变量',
@@ -241,7 +238,7 @@ const strings = {
     'models.select': '选择模型:',
 
     'help.interactive': '交互模式:',
-    'help.interactive.ccc': '主菜单（启动、应用、管理）',
+    'help.interactive.ccc': '配置列表；回车启动默认选中项',
     'help.quick': '快速启动:',
     'help.quick.name': '按名称启动',
     'help.quick.number': '按序号启动',
@@ -281,8 +278,7 @@ export function getLang() {
 export function setLang(lang) {
   currentLang = lang;
   try {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ ...readConfig(), lang }, null, 2) + '\n');
+    atomicWrite(CONFIG_PATH, JSON.stringify({ ...readConfig(), lang }, null, 2) + '\n');
   } catch { /* A read-only home only loses persistence, not the session switch. */ }
 }
 

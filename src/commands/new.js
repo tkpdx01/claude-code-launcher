@@ -14,6 +14,7 @@ import {
 import { launchClaude } from '../claude.js';
 import { launchCodex } from '../codex.js';
 import { inputApiKey, cancel } from './shared.js';
+import { archiveProfiles } from '../recovery.js';
 
 // Claude and DeepSeek share profiles/<name>.json, Codex has its own directory.
 // When the new profile lands in the other storage, drop the stale one so the
@@ -22,8 +23,10 @@ function removeReplaced(replaced, newType) {
   if (!replaced) return;
   const wasCodex = replaced.type === 'codex';
   if (wasCodex === (newType === 'codex')) return;
-  if (wasCodex) store.deleteCodexProfile(replaced.name);
-  else store.deleteClaudeProfile(replaced.name);
+  const wasDefault = store.getDefaultProfileName() === replaced.name;
+  const id = archiveProfiles(store.profilePaths([replaced]), [replaced.name]);
+  if (wasDefault) store.setDefaultProfile(replaced.name);
+  hint(t('recovery.saved', { id }));
 }
 
 export async function newCommand(args) {
@@ -42,10 +45,13 @@ export async function newCommand(args) {
   if (v !== true) fail(v);
 
   const existing = store.anyProfileExists(name);
+  if (existing.type === 'codex' && store.canonicalCodexName(name) !== name) {
+    throw new Error(t('new.alias', { name: store.canonicalCodexName(name) }));
+  }
   let replaced = null;
   if (existing.exists) {
     const overwrite = await confirm(t('new.exists', { name, type: typeLabel(existing.type) }), false);
-    if (!overwrite) cancel();
+    if (!overwrite) return cancel();
     replaced = { name, type: existing.type };
   }
 
@@ -58,7 +64,7 @@ export async function newCommand(args) {
     removeReplaced(replaced, 'codex');
     status('success', t('new.created_codex', { name }));
 
-    if (await confirm(t('new.launch_codex'), false)) launchCodex(name);
+    if (await confirm(t('new.launch_codex'), false)) { launchCodex(name); return true; }
   } else if (profileType === 'deepseek') {
     const apiKey = await inputApiKey('DeepSeek API Key:');
     const model = await select('Model:', DEEPSEEK_MODELS);
@@ -67,7 +73,7 @@ export async function newCommand(args) {
     removeReplaced(replaced, 'deepseek');
     status('success', t('new.created_deepseek', { name }));
 
-    if (await confirm(t('new.launch_deepseek'), false)) launchClaude(name);
+    if (await confirm(t('new.launch_deepseek'), false)) { launchClaude(name); return true; }
   } else {
     const apiUrl = await input('ANTHROPIC_BASE_URL:', ANTHROPIC_DEFAULT_BASE_URL);
     const apiKey = await inputApiKey('ANTHROPIC_AUTH_TOKEN:');
@@ -77,6 +83,6 @@ export async function newCommand(args) {
     status('success', t('new.created_claude', { name }));
     if (isAnyRouterUrl(apiUrl)) hint(t('new.anyrouter_1m'));
 
-    if (await confirm(t('new.launch_claude'), false)) launchClaude(name);
+    if (await confirm(t('new.launch_claude'), false)) { launchClaude(name); return true; }
   }
 }

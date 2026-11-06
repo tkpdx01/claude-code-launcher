@@ -1,7 +1,7 @@
 import { t } from './i18n.js';
 
 const RESERVED = new Set([
-  'list', 'ls', 'use', 'show', 'new', 'edit', 'delete', 'rm', 'apply', 'help',
+  'list', 'ls', 'use', 'show', 'new', 'edit', 'delete', 'rm', 'apply', 'help', 'cleanup', 'restore', 'default',
 ]);
 
 export function normalizeProfileName(name) {

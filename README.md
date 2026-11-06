@@ -1,123 +1,129 @@
-# ccc
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tkpdx01/claude-code-launcher/v2.6.0/docs/images/ccc-icon.png" width="96" alt="CCC icon">
+</p>
+<h1 align="center">ccc</h1>
+<p align="center">Your Claude Code and Codex profiles. One quiet, fast launcher.</p>
+<p align="center"><a href="https://www.npmjs.com/package/@tkpdx01/ccc">npm</a> · Node.js 18+ · macOS / Linux / Windows · Zero runtime dependencies</p>
 
-> Zero-dependency profile switcher for **Claude Code** & **OpenAI Codex**.
+![CCC profile picker: cc is selected as the default](https://raw.githubusercontent.com/tkpdx01/claude-code-launcher/v2.6.0/docs/images/cli-preview.svg)
 
-![CCC terminal preview with provider badges, a highlighted menu, and keyboard shortcuts](docs/images/cli-preview.png)
-
-*Terminal preview with demo profiles.*
+## Start
 
 ```bash
-npm i -g @tkpdx01/ccc
+npm install -g @tkpdx01/ccc
+ccc new                   # add a Claude, Codex, or DeepSeek profile
+ccc                       # choose a profile and press Enter
+ccc default cc            # preselect cc next time
+ccc c                     # launch by name
 ```
 
-```bash
-ccc new          # create a profile
-ccc list         # list all
-ccc 3            # launch #3
-ccc -d           # Claude: --dangerously-skip-permissions; Codex: --dangerously-bypass-approvals-and-sandbox
-ccc api -p "Explain this project"  # forward arguments to Claude
-ccc api -- --help                # show the child CLI's help
-```
+The picker opens directly on your profiles. A soft highlight, provider colors,
+instant search, and a ★ default marker keep the screen easy to scan. English and
+Chinese are built in. Small terminals, Unicode names, `NO_COLOR`, and redirected
+output are supported.
 
-The interactive UI includes a workspace header, provider badges, highlighted
-menus, and layouts that adapt to terminal width and height.
+| In the picker | Action |
+| --- | --- |
+| Enter | Launch selected profile |
+| ↑ / ↓ or j / k | Move |
+| Type or / | Search; / also searches names starting with j, k, or q |
+| Esc / Ctrl+U | Clear search / clear query |
+| Ctrl+E / Ctrl+N | Edit / create |
+| Ctrl+A / Ctrl+D | Apply globally / archive |
+| Ctrl+S / Ctrl+F | Details / set default |
+| Ctrl+L / Ctrl+R | Switch language / restore |
+| q or Esc outside search | Exit |
 
-- Type to filter actions, profiles, or models instantly by name and description
-  (including provider). Matching ignores case and accepts multiple keywords,
-  such as `codex dev`. The main menu also accepts English action names in Chinese mode.
-- Press **/** to start a search, including names beginning with `j`, `k`, or `q`.
-  **Backspace** deletes a character, **Ctrl+U** clears the query, and **Esc** clears
-  the search and returns to navigation. The menu shows match counts and empty results.
-- Use **↑/↓** and **Enter** to choose, or **Home/End** and **Page Up/Down** for
-  long lists. Outside search, **j/k** also move and **q** or **Esc** exit.
-
-Chinese text and emoji align by terminal cell width, and long search input keeps
-its newest characters visible. Piped output stays free of color codes;
-`NO_COLOR=1` also disables colors in interactive terminals.
-
-## How It Works
-
-```
- ~/.ccc/profiles/api.json        ~/.claude/settings.json
-      credentials only        +        read-only
-              │                           │
-              └──── merge at launch ──────┘
-                         │
-             ~/.ccc/tmp/claude-<id>/api.json
-                         │
-                claude --settings <tmp>
-```
-
-Claude profiles store API URL + key, with optional model, environment, and
-settings overrides. At launch, your global `settings.json` is read, merged
-with the profile, and passed to `claude` via a private temporary file.
-Each launch gets its own file, which is removed when the child exits or
-fails to start. Codex uses the profile directory as `CODEX_HOME`.
-
-Normal launches leave global settings unchanged. The explicit `ccc apply`
-command writes the selected profile to the global configuration.
-
-Claude launches default to `skipWebFetchPreflight: true`, so WebFetch does
-not depend on Anthropic's domain preflight service when using custom or
-restricted endpoints. An explicit `false` in the global settings or profile
-settings overrides this default.
-
-AnyRouter endpoints (`anyrouter.top` and the same host behind a reverse
-proxy) require Claude Code's 1M context header. Creating or editing a
-Claude profile with an AnyRouter URL writes that configuration
-automatically: `claude-fable-5-1[1m]`, `context-1m-2025-08-07`, and the
-flags that would otherwise block experimental betas. Existing AnyRouter
-profiles pick up the same overlay at launch and apply without being
-rewritten.
-
-Existing full `settings.json` profiles and slim profiles remain supported.
-Older ccc-generated Codex profiles with model/provider keys inside
-`[analytics]` are repaired on launch or when applied. Other tables are kept.
-Malformed Claude global settings produce an error so they can be repaired
-without losing existing settings.
-
-Extra launch arguments keep their order. Existing ccc flags (`-d`, `--ddd`,
-`--help`, and `--version`, including their short aliases) are still handled
-by the launcher; use `--` before arguments that should go entirely to the
-child CLI.
+Home, End, Page Up, and Page Down work in longer lists. Management actions return
+to the picker. In scripts, give an explicit profile; bare `ccc` prints the list
+when input or output is redirected.
 
 ## Commands
 
-| | |
-|---|---|
-| `ccc list` | List profiles |
-| `ccc new [name]` | Create profile |
-| `ccc edit [profile]` | Edit credentials |
-| `ccc show [profile]` | Show details |
-| `ccc apply [profile]` | Write profile to global config |
-| `ccc delete [profile]` | Delete |
+| Command | Purpose |
+| --- | --- |
+| `ccc list` | List profiles (`ls` also works) |
+| `ccc new [name]` | Create a profile |
+| `ccc edit [profile]` | Edit credentials, model, or name |
+| `ccc show [profile]` | Inspect with secrets masked |
+| `ccc default [profile]` | Read or set the default; `--clear` resets it |
+| `ccc apply [profile]` | Update global credentials with a recovery snapshot |
+| `ccc delete [profile]` | Archive a profile, including its sessions |
+| `ccc cleanup --keep c cc grok` | Preview a batch cleanup |
+| `ccc restore [id]` | List recovery records or restore one |
 
-## Development
+```bash
+ccc cc -p "Explain this project" --output-format json
+ccc c -- exec "Explain this project"
+ccc cc -- --help           # forward flags that ccc also understands
+ccc 2                     # launch by list position; exact names take priority
+ccc c -d                  # bypass Codex approvals and sandbox
+```
 
-Requires Node.js 18 or newer and npm. The launcher uses only Node.js built-ins;
-there are no third-party runtime or development dependencies.
+For Claude, `-d` passes `--dangerously-skip-permissions`. Launcher notices go to
+stderr, leaving stdout available for the child CLI's JSON or streamed output.
+
+## Clean up, then restore
+
+```bash
+ccc cleanup --keep c cc grok              # preview only
+ccc cleanup --keep c cc grok --apply      # review and confirm
+ccc restore                              # browse recovery records
+ccc restore <id> --dry-run                # preview the affected paths
+ccc restore <id>                          # restore
+```
+
+Automation can add `--yes` to cleanup with `--apply`, or to restore. Unknown
+names in `--keep` stop cleanup. Restore refuses to overwrite an existing
+profile or global settings edited since the snapshot.
+
+Codex renaming preserves the complete directory, including sessions, databases,
+skills, and instructions. Old names remain as compatibility links for absolute
+session paths; only the current name appears in the picker. Cleanup archives
+those links together with the profile. Recovery records stay in
+`~/.ccc/recovery/` until you remove them.
+
+## How profiles work
+
+```text
+Claude profile + global settings → private temporary settings → claude
+Codex profile directory         → dedicated CODEX_HOME        → codex
+```
+
+Normal launches leave global settings unchanged. Claude temporary files are
+private and cleaned up on exit. Profile credentials are saved atomically with
+owner-only permissions on POSIX systems; key input is hidden.
+
+`apply` merges Claude settings. For Codex it updates the selected model/provider
+and credentials while preserving MCP servers, project trust, and other global
+preferences. Both create recovery snapshots. Codex credentials follow the active
+provider, and editing preserves models missing from `/models`.
+
+Legacy full Claude settings and slim Codex JSON profiles remain supported.
+AnyRouter's 1M context overlay is applied automatically. Claude defaults
+`skipWebFetchPreflight` to `true`; an explicit `false` is respected.
+
+## Small by design
+
+The npm package ships one minified JavaScript entry plus this README and package
+metadata. It has **no runtime dependencies**. Screenshots, icons, tests, source
+modules, and build tools stay in the repository.
 
 ```bash
 npm ci
-npm test
+npm test                  # behavior and regression tests
+npm run test:package      # build, pack, install, and verify the actual tarball
+node scripts/preview.mjs  # refresh the demo from the real picker
 ```
 
-Commit `package-lock.json` with any dependency change. `.npmrc` saves new
-dependencies at exact versions, and CI and publishing use `npm ci` to install
-the locked dependency tree and remove leftover packages. The test matrix covers
-Node.js 18, 20, 22, and 24 on Linux, macOS, and Windows.
+The only development dependency is a pinned esbuild, used for release bundling.
+CI checks Node.js 18, 20, 22, and 24 on Linux, macOS, and Windows. Commit
+`package-lock.json` alongside dependency changes.
 
-## Storage
+## 中文速用
 
-```
-~/.ccc/
-├── profiles/          # Claude  { apiUrl, apiKey }
-├── codex-profiles/    # Codex   auth.json + config.toml
-├── tmp/               # Per-launch merged settings (ephemeral)
-└── config.json        # Launcher preferences (language)
-```
-
-Older Codex profiles stored as `~/.ccc/profiles/<name>.json` with `type: "codex"` are still listed and launched as Codex, not Claude. Launching one materializes it into `codex-profiles/`.
+运行 `ccc` 直接选择配置，回车启动；`ccc default cc` 设置默认选中项。
+`Ctrl+L` 切换中英文。清理先预览，删除可恢复，改名保留完整会话。
 
 ## License
 

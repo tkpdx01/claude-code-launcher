@@ -70,6 +70,9 @@ export async function promptCodexModel(baseUrl, apiKey, currentModel = '') {
       ...modelIds.map((id) => ({ name: id, value: id })),
       { name: t('models.manual'), value: '__manual__' },
     ];
+    if (current && !modelIds.includes(current)) {
+      choices.splice(1, 0, { name: current, value: current });
+    }
 
     let defaultIndex = 0;
     if (current) {

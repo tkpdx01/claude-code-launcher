@@ -23,6 +23,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Verify published package
+        run: npm run test:package
+
       - name: Publish to npm
         run: npm publish --access public
         env:

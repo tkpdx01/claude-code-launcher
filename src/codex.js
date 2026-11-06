@@ -37,7 +37,7 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false, ext
 
   // Sandbox cleanup, [analytics] scope repair, and reserved provider rename in one pass.
   if (store.repairCodexProfileConfig(profileName).renamedProvider) {
-    console.log(yellow(t('launch.fix_provider')));
+    console.error(yellow(t('launch.fix_provider')));
   }
 
   const { apiKey } = store.getCodexCredentials(profileName);
@@ -56,6 +56,6 @@ export function launchCodex(profileName, dangerouslySkipPermissions = false, ext
   });
 
   superviseCli(child, {
-    onError: (err) => console.log(red(t('launch.failed', { msg: err.message }))),
+    onError: (err) => console.error(red(t('launch.failed', { msg: err.message }))),
   });
 }

@@ -12,7 +12,7 @@ import { selectProfile, inputApiKey } from './shared.js';
 const MANUAL_MODEL = '__manual__';
 
 function maskKey(key) {
-  return key ? `${key.substring(0, 10)}...` : t('common.not_set');
+  return key ? '••••••••' : t('common.not_set');
 }
 
 function showCurrent(name, type, fields) {
@@ -35,6 +35,7 @@ async function promptRename(currentName) {
 function saveClaudeLike(currentName, newName, updated) {
   if (newName) {
     store.saveClaudeProfile(newName, updated);
+    if (store.getDefaultProfileName() === currentName) store.setDefaultProfile(newName);
     store.deleteClaudeProfile(currentName);
     status('success', t('edit.renamed', { name: newName }));
   } else {
@@ -58,10 +59,7 @@ async function editCodex(name) {
 
   store.updateCodexProfile(name, apiKey, baseUrl, model);
   if (newName) {
-    const profile = store.readCodexProfile(name);
-    store.saveCodexProfile(newName, profile.auth, profile.configToml);
-    store.copyCodexProfileSupportFiles(name, store.getCodexProfileDir(newName));
-    store.deleteCodexProfile(name);
+    store.renameCodexProfile(name, newName);
     status('success', t('edit.renamed', { name: newName }));
   } else {
     status('success', t('edit.updated', { name }));
@@ -80,6 +78,7 @@ async function editDeepseek(name) {
   const apiKey = await inputApiKey('DeepSeek API Key:', curKey);
 
   const choices = [...DEEPSEEK_MODELS, { name: t('models.manual'), value: MANUAL_MODEL }];
+  if (curModel && !choices.some((m) => m.value === curModel)) choices.unshift({ name: curModel, value: curModel });
   const defaultIdx = Math.max(0, choices.findIndex((m) => m.value === curModel));
   let model = await select('Model:', choices, defaultIdx);
   if (model === MANUAL_MODEL) model = await input(t('models.prompt'), curModel);

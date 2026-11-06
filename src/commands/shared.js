@@ -1,7 +1,7 @@
 // Helpers shared by the profile commands: argument resolution, prompts, and exits.
 import * as store from '../store.js';
 import { t } from '../i18n.js';
-import { input, select } from '../prompt.js';
+import { secretInput, select } from '../prompt.js';
 import { profileChoice, fail } from '../ui.js';
 import { yellow } from '../color.js';
 
@@ -19,12 +19,12 @@ export async function selectProfile(args, messageKey, all = store.getAllProfiles
 }
 
 export async function inputApiKey(message, current = '') {
-  const value = await input(message, current);
+  const value = await secretInput(message, current);
   if (!value) fail(t('common.apikey_required'));
   return value;
 }
 
 export function cancel() {
   console.log(yellow(t('common.cancelled')));
-  process.exit(0);
+  return false;
 }

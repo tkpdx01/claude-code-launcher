@@ -2,7 +2,7 @@
 // Uses Node built-in readline + raw mode for arrow-key selection
 
 import readline from 'readline';
-import { cyan, green, gray, dim, bold, inverse } from './color.js';
+import { cyan, green, gray, dim, bold, selected } from './color.js';
 import { clip, pad, width, plain, columns, graphemes } from './ui.js';
 import { t } from './i18n.js';
 
@@ -58,6 +58,51 @@ export function input(message, defaultValue = '') {
   return ask(`  ${cyan('◆')} ${bold(message)}${suffix} `, defaultValue);
 }
 
+export function secretInput(message, current = '') {
+  const prompt = `  ${cyan('◆')} ${bold(message)}${current ? ' ' + dim(t('common.keep_secret')) : ''} `;
+  if (!process.stdin.isTTY) return ask(prompt, current);
+  process.stdout.write(prompt);
+  return new Promise((resolve, reject) => {
+    let value = '';
+    let done = false;
+    const wasRaw = !!process.stdin.isRaw;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      process.stdin.setRawMode(wasRaw);
+      process.stdin.removeListener('keypress', onKey);
+      process.stdin.removeListener('end', onEnd);
+      process.stdin.pause();
+      process.removeListener('exit', cleanup);
+      process.removeListener('SIGTERM', terminate);
+      process.removeListener('SIGHUP', hangup);
+    };
+    const abort = (code) => { cleanup(); process.stdout.write('\n'); process.exit(code); };
+    const terminate = () => abort(143);
+    const hangup = () => abort(129);
+    const onEnd = () => { cleanup(); reject(new Error(t('common.cancelled'))); };
+    const onKey = (str, key = {}) => {
+      if (done) return;
+      if (key.name === 'escape' || (key.ctrl && ['c', 'd'].includes(key.name))) return abort(130);
+      if (['return', 'enter'].includes(key.name)) {
+        cleanup();
+        process.stdout.write('\n');
+        resolve(value.trim() || current);
+      } else if (key.name === 'backspace') value = backspace(value);
+      else if (key.ctrl && key.name === 'u') value = '';
+      else if (str && !key.ctrl && !key.meta && !/[\x00-\x1f\x7f-\x9f]/u.test(str)) value += str;
+    };
+    readline.emitKeypressEvents(process.stdin);
+    process.stdin.on('keypress', onKey);
+    process.stdin.once('end', onEnd);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.once('exit', cleanup);
+    process.once('SIGTERM', terminate);
+    process.once('SIGHUP', hangup);
+  });
+}
+
 // --- Confirm (y/n) ---
 export async function confirm(message, defaultValue = false) {
   const hint = defaultValue ? 'Y/n' : 'y/N';
@@ -94,7 +139,7 @@ function queryTail(value, limit) {
 
 // --- Searchable list selection ---
 // Type to filter, or press / to search for text beginning with j, k, or q.
-export function select(message, choices, defaultIndex = 0) {
+export function select(message, choices, defaultIndex = 0, options = {}) {
   return new Promise((resolve) => {
     const allIndices = choices.map((_, i) => i);
     const selectableIndices = allIndices.filter((i) => !choices[i].separator);
@@ -186,7 +231,7 @@ export function select(message, choices, defaultIndex = 0) {
           label = pad(label, labelWidth) + dim(choice.description);
         }
         if (i === cursor) {
-          lines.push(`  ${cyan('│')}${inverse(cyan(pad(' › ' + plain(label), size - 3)))}`);
+          lines.push(`  ${cyan('│')}${selected(pad(' › ' + plain(label), size - 3))}`);
         } else {
           lines.push(`  ${gray('│')}   ${clip(label, size - 6)}`);
         }
@@ -196,7 +241,7 @@ export function select(message, choices, defaultIndex = 0) {
       if (showDetail) lines.push(`  ${gray('│')}   ${clip(dim(choices[cursor].description), size - 6)}`);
       if (showHelp) {
         const helpKey = searching ? 'ui.search_keys' : 'ui.keys';
-        const help = t(size < 54 ? helpKey + '_short' : helpKey);
+        const help = !searching && options.hint ? options.hint : t(size < 54 ? helpKey + '_short' : helpKey);
         lines.push(`  ${cyan('╰─')} ${clip(gray(help), size - 5)}`);
       }
       return lines.map((line) => clip(line, size));
@@ -248,6 +293,13 @@ export function select(message, choices, defaultIndex = 0) {
 
     function onKeypress(str, key = {}) {
       if (done) return;
+      if (key.ctrl && options.shortcuts?.[key.name]) {
+        const value = options.shortcuts[key.name](choices[getCursor()]?.value);
+        erase();
+        cleanup();
+        resolve(value);
+        return;
+      }
       let next = cursorPos;
       if ((key.ctrl && key.name === 'c') || (!searching && (key.name === 'escape' || str === 'q'))) {
         cleanup();

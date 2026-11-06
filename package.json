@@ -1,21 +1,23 @@
 {
   "name": "@tkpdx01/ccc",
-  "version": "2.5.0",
-  "description": "Claude Code / Codex Settings Launcher - Manage multiple profiles with zero dependencies",
-  "main": "index.js",
+  "version": "2.6.0",
+  "description": "A compact, recoverable Claude Code and Codex profile launcher with zero runtime dependencies",
+  "main": "dist/ccc.js",
   "bin": {
-    "ccc": "index.js"
+    "ccc": "dist/ccc.js"
   },
   "files": [
-    "index.js",
-    "src/"
+    "dist/ccc.js"
   ],
   "type": "module",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "test:package": "node scripts/verify-package.mjs"
   },
   "keywords": [
     "claude",
@@ -37,5 +39,8 @@
   "bugs": {
     "url": "https://github.com/tkpdx01/claude-code-launcher/issues"
   },
-  "homepage": "https://github.com/tkpdx01/claude-code-launcher#readme"
+  "homepage": "https://github.com/tkpdx01/claude-code-launcher#readme",
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
 }

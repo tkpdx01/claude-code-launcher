@@ -1,3 +1,5 @@
+import { setTomlValue, tomlValue, tomlText, replaceTomlTable, scanToml } from './toml.js';
+
 // Repair only the simple model keys misplaced by older ccc releases.
 // Keep unrelated TOML tables, comments, and explicit root values intact.
 export function fixCodexAnalyticsScope(toml) {
@@ -49,29 +51,44 @@ export function readTomlString(toml, key) {
 // Rewrite old profiles that used [model_providers.openai]; returns the input
 // unchanged when there is nothing to rename.
 export function fixReservedProviderName(toml) {
-  if (!toml.includes('[model_providers.openai]')) return toml;
-
-  let next = toml.replace(/\[model_providers\.openai\]/g, '[model_providers.ccc_openai]');
-
-  // Ensure model_provider points to the renamed section
-  if (/^\s*model_provider\s*=\s*"openai"/m.test(next)) {
-    next = next.replace(/^(\s*model_provider\s*=\s*)"openai"/m, '$1"ccc_openai"');
-  } else if (!/^\s*model_provider\s*=/m.test(next)) {
-    // No model_provider set — add it before first [section]
-    const firstSection = next.search(/^\s*\[/m);
-    if (firstSection >= 0) {
-      next = `${next.slice(0, firstSection)}model_provider = "ccc_openai"\n${next.slice(firstSection)}`;
-    }
+  if (!toml.includes('openai')) return toml;
+  const doc = scanToml(toml);
+  const isProvider = (section, name) => section.path[0] === 'model_providers' && section.path[1] === name;
+  const old = doc.sections.filter((s) => isProvider(s, 'openai'));
+  if (!old.length) return toml;
+  if (doc.sections.some((s) => isProvider(s, 'ccc_openai'))) {
+    throw new Error('Both openai and ccc_openai provider tables exist; rename the legacy provider manually');
   }
+  for (const section of old) {
+    const parts = ['model_providers', 'ccc_openai', ...section.path.slice(2)];
+    doc.lines[section.start] = '[' + parts.map((p) => /^[A-Za-z0-9_-]+$/.test(p) ? p : JSON.stringify(p)).join('.') + ']';
+  }
+  let next = doc.lines.join(doc.eol);
+  const provider = tomlText(next, ['model_provider']);
+  if (!provider || provider === 'openai') next = setTomlValue(next, ['model_provider'], '"ccc_openai"');
+  const table = ['model_providers', 'ccc_openai'];
+  if (/^true\s*(?:#.*)?$/.test(tomlValue(next, [...table, 'requires_openai_auth']) || '')) {
+    next = setTomlValue(next, [...table, 'requires_openai_auth'], null);
+  }
+  for (const [key, value] of [['env_key', '"OPENAI_API_KEY"'], ['wire_api', '"responses"']]) {
+    if (tomlValue(next, [...table, key]) === undefined) next = setTomlValue(next, [...table, key], value);
+  }
+  return next;
+}
 
-  return next.replace(/(\[model_providers\.ccc_openai\][^[]*)/s, (section) => {
-    let updated = section.replace(/^\s*requires_openai_auth\s*=\s*true\s*$/m, 'env_key = "OPENAI_API_KEY"');
-    if (!/^\s*env_key\s*=.*$/m.test(updated)) {
-      updated = updated.trimEnd() + '\nenv_key = "OPENAI_API_KEY"\n';
-    }
-    if (!/^\s*wire_api\s*=.*$/m.test(updated)) {
-      updated = updated.trimEnd() + '\nwire_api = "responses"\n';
-    }
-    return updated;
-  });
+// Applying credentials must not replace MCP, project trust, or user preferences.
+export function mergeCodexConfig(current, profile) {
+  let next = fixReservedProviderName(current);
+  const source = fixReservedProviderName(fixCodexAnalyticsScope(profile));
+  scanToml(next);
+  const provider = tomlText(source, ['model_provider']);
+  for (const key of ['model', 'model_provider', 'model_catalog_json']) {
+    next = setTomlValue(next, [key], tomlValue(source, [key]) ?? null);
+  }
+  const effort = tomlValue(source, ['model_reasoning_effort']);
+  if (effort !== undefined) next = setTomlValue(next, ['model_reasoning_effort'], effort);
+  if (provider && !['openai', 'ollama', 'lmstudio'].includes(provider)) {
+    next = replaceTomlTable(next, ['model_providers', provider], source);
+  }
+  return next;
 }

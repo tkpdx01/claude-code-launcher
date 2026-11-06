@@ -1,5 +1,5 @@
 // Small terminal layout primitives. No fonts, themes, or packages to install.
-import { bold, cyan, green, blue, magenta, gray, yellow, red, dim } from './color.js';
+import { bold, cyan, green, blue, magenta, gray, yellow, red, dim, accent } from './color.js';
 import { t } from './i18n.js';
 
 const sgr = /\x1b\[[0-9;]*m/g;
@@ -122,15 +122,12 @@ export function brandHeader(version, profiles) {
   const counts = ['claude', 'codex', 'deepseek'].map((type) => {
     const count = profiles.filter((p) => p.type === type).length;
     return count ? `${typeTag(type)} ${bold(count)}` : '';
-  }).filter(Boolean).join(gray('   /   '));
-  const title = `${cyan('◆')} ${bold('CCC')} ${gray('/')} ${t('ui.workspace')}`;
-  if ((process.stdout.rows || 24) < 22) {
-    return `  ${clip(title + gray(`  v${version}`), columns())}\n`;
-  }
-  return panel([
-    gray('Claude Code · Codex · DeepSeek'),
-    counts || dim(t('menu.empty')),
-  ], { title, meta: `v${version}` });
+  }).filter(Boolean).join(gray('   ·   '));
+  const size = columns();
+  const title = `${accent('◈')}  ${bold('CCC')}`;
+  const meta = gray(`v${version}`);
+  const heading = size > 24 ? pad(title, size - width(meta)) + meta : clip(title, size);
+  return `  ${heading}\n  ${clip(counts || dim(t('menu.empty')), size)}\n`;
 }
 
 export function section(title, meta = '') {
@@ -147,7 +144,7 @@ export function hint(message) {
 export function status(kind, message, detail = '') {
   const style = { success: [green, '✓'], error: [red, '×'], warning: [yellow, '!'], launch: [cyan, '↗'] }[kind];
   const [color, symbol] = style || [cyan, '·'];
-  const write = kind === 'error' ? console.error : console.log;
+  const write = kind === 'error' || kind === 'launch' ? console.error : console.log;
   write(`\n  ${color(symbol)} ${bold(message)}`);
   if (detail) write(`    ${gray(detail)}`);
   write();
@@ -155,6 +152,6 @@ export function status(kind, message, detail = '') {
 
 // Print a one-line error and stop; commands use this for user-facing validation failures.
 export function fail(message, code = 1) {
-  console.log(red(message));
+  console.error(red(message));
   process.exit(code);
 }
